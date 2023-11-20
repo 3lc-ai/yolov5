@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 try:
@@ -45,24 +45,27 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
+import tlc
+from tlc.core.builtins.constants.column_names import BOUNDING_BOXES
+
 import val as validate  # for end-of-epoch mAP
 from models.experimental import attempt_load
 from models.yolo import Model
 from utils.autoanchor import check_anchors
 from utils.autobatch import check_train_batch_size
 from utils.callbacks import Callbacks
-from utils.dataloaders import create_dataloader
 from utils.downloads import attempt_download, is_url
 from utils.general import (LOGGER, TQDM_BAR_FORMAT, check_amp, check_dataset, check_file, check_git_info,
                            check_git_status, check_img_size, check_requirements, check_suffix, check_yaml, colorstr,
                            get_latest_run, increment_path, init_seeds, intersect_dicts, labels_to_class_weights,
-                           labels_to_image_weights, methods, one_cycle, print_args, print_mutation, strip_optimizer,
-                           yaml_save)
+                           methods, one_cycle, print_args, print_mutation, strip_optimizer, yaml_save)
 from utils.loggers import Loggers
 from utils.loggers.comet.comet_utils import check_comet_resume
 from utils.loss import ComputeLoss
 from utils.metrics import fitness
 from utils.plots import plot_evolve
+from utils.tlc_integration import DatasetMode, create_dataloader, get_or_create_tlc_table
+from utils.tlc_integration.utils import create_tlc_info_string_before_training
 from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_device, smart_DDP, smart_optimizer,
                                smart_resume, torch_distributed_zero_first)
 
@@ -70,6 +73,8 @@ LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable
 RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
 GIT_INFO = check_git_info()
+
+import collect
 
 
 def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
@@ -90,7 +95,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     LOGGER.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
     opt.hyp = hyp.copy()  # for saving hyps to checkpoints
 
-    # Save run settings
+    # Save run s2ettings
     if not evolve:
         yaml_save(save_dir / 'hyp.yaml', hyp)
         yaml_save(save_dir / 'opt.yaml', vars(opt))
@@ -115,9 +120,24 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     init_seeds(opt.seed + 1 + RANK, deterministic=True)
     with torch_distributed_zero_first(LOCAL_RANK):
         data_dict = data_dict or check_dataset(data)  # check if None
+
+        train_table, val_table = (get_or_create_tlc_table(
+            input_url=data,
+            root_url=opt.tlc_root_url,
+            split=split,
+            revision_url=opt.tlc_train_revision if split == 'train' else opt.tlc_val_revision,
+        ) for split in ('train', 'val'))
+
     train_path, val_path = data_dict['train'], data_dict['val']
-    nc = 1 if single_cls else int(data_dict['nc'])  # number of classes
-    names = {0: 'item'} if single_cls and len(data_dict['names']) != 1 else data_dict['names']  # class names
+    # Make sure train and val tables have same number of classes
+    train_categories = train_table.get_value_map_for_column(BOUNDING_BOXES)
+    val_categories = val_table.get_value_map_for_column(BOUNDING_BOXES)
+
+    if not train_categories == val_categories:
+        raise ValueError('Train and val tables have different categories. Need to have the same categories.')
+
+    nc = 1 if single_cls else len(train_categories)
+    names = {0: 'item'} if single_cls and len(train_categories) != 1 else train_categories
     is_coco = isinstance(val_path, str) and val_path.endswith('coco/val2017.txt')  # COCO dataset
 
     # Model
@@ -192,40 +212,47 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info('Using SyncBatchNorm()')
 
     # Trainloader
-    train_loader, dataset = create_dataloader(train_path,
-                                              imgsz,
-                                              batch_size // WORLD_SIZE,
-                                              gs,
-                                              single_cls,
-                                              hyp=hyp,
-                                              augment=True,
-                                              cache=None if opt.cache == 'val' else opt.cache,
-                                              rect=opt.rect,
-                                              rank=LOCAL_RANK,
-                                              workers=workers,
-                                              image_weights=opt.image_weights,
-                                              quad=opt.quad,
-                                              prefix=colorstr('train: '),
-                                              shuffle=True,
-                                              seed=opt.seed)
+    train_loader, dataset = create_dataloader(
+        train_path,
+        imgsz,
+        batch_size // WORLD_SIZE,
+        gs,
+        single_cls,
+        hyp=hyp,
+        augment=True,
+        cache=False,  # None if opt.cache == 'val' else opt.cache,
+        rect=opt.rect,
+        rank=LOCAL_RANK,
+        workers=workers,
+        image_weights=opt.image_weights,
+        quad=opt.quad,
+        prefix=colorstr('train: '),
+        shuffle=True,
+        seed=opt.seed,
+        table=train_table,
+        tlc_sampling_weights=not opt.tlc_disable_sample_weights,
+        dataset_mode=DatasetMode.TRAIN)  # Use sampling weights in training
     labels = np.concatenate(dataset.labels, 0)
     mlc = int(labels[:, 0].max())  # max label class
     assert mlc < nc, f'Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}'
 
     # Process 0
     if RANK in {-1, 0}:
-        val_loader = create_dataloader(val_path,
-                                       imgsz,
-                                       batch_size // WORLD_SIZE * 2,
-                                       gs,
-                                       single_cls,
-                                       hyp=hyp,
-                                       cache=None if noval else opt.cache,
-                                       rect=True,
-                                       rank=-1,
-                                       workers=workers * 2,
-                                       pad=0.5,
-                                       prefix=colorstr('val: '))[0]
+        val_loader = create_dataloader(
+            val_path,
+            imgsz,
+            batch_size // WORLD_SIZE * 2,
+            gs,
+            single_cls,
+            hyp=hyp,
+            cache=False,  # None if noval else opt.cache,
+            rect=True,
+            rank=-1,
+            workers=workers * 2,
+            pad=0.5,
+            prefix=colorstr('val: '),
+            table=val_table,
+            dataset_mode=DatasetMode.VAL)[0]
 
         if not resume:
             if not opt.noautoanchor:
@@ -249,6 +276,33 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
     model.names = names
 
+    # 3LC Setup --------------------------------------------------------------------------------------------------------
+    tlc_metrics_collection_epochs = range(opt.tlc_mc_start, epochs +
+                                          1, opt.tlc_mc_interval) if not opt.tlc_disable_mc else []
+    tlc_mc_string = create_tlc_info_string_before_training(tlc_metrics_collection_epochs, opt.tlc_mc_before_training)
+    LOGGER.info(colorstr('3LC: ') + tlc_mc_string)
+
+    if RANK in {-1, 0} and not opt.tlc_disable_mc:
+        tlc.init(train_table.project_name)
+
+        # Collect metrics prior to training?
+        if opt.tlc_mc_before_training:
+            for table in (train_table, val_table):
+                collect.run(
+                    model=ema.ema,
+                    table=table,
+                    stride=gs,
+                    epoch=-1,
+                    imgsz=imgsz,  # Infer on the same size images
+                    conf_thres=opt.tlc_mc_conf_thres,
+                    iou_thres=opt.tlc_mc_nms_iou_thres,
+                    max_det=opt.tlc_mc_max_det,
+                    tlc_iou_thres=opt.tlc_mc_iou_thres,
+                    workers=workers,
+                    half=amp)
+
+    # 3LC Setup End ----------------------------------------------------------------------------------------------------
+
     # Start training
     t0 = time.time()
     nb = len(train_loader)  # number of batches
@@ -262,19 +316,24 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     stopper, stop = EarlyStopping(patience=opt.patience), False
     compute_loss = ComputeLoss(model)  # init loss class
     callbacks.run('on_train_start')
+
     LOGGER.info(f'Image sizes {imgsz} train, {imgsz} val\n'
                 f'Using {train_loader.num_workers * WORLD_SIZE} dataloader workers\n'
                 f"Logging results to {colorstr('bold', save_dir)}\n"
                 f'Starting training for {epochs} epochs...')
+
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         callbacks.run('on_train_epoch_start')
         model.train()
 
         # Update image weights (optional, single-GPU only)
-        if opt.image_weights:
-            cw = model.class_weights.cpu().numpy() * (1 - maps) ** 2 / nc  # class weights
-            iw = labels_to_image_weights(dataset.labels, nc=nc, class_weights=cw)  # image weights
-            dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
+        # if opt.image_weights:
+        #     cw = model.class_weights.cpu().numpy() * (1 - maps) ** 2 / nc  # class weights
+        #     iw = labels_to_image_weights(dataset.labels, nc=nc, class_weights=cw)  # image weights
+        #     dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
+
+        # Resample train dataset images (only resamples if enabled)
+        train_loader.dataset.resample(epoch)
 
         # Update mosaic border (optional)
         # b = int(random.uniform(0.25 * imgsz, 0.75 * imgsz + gs) // gs * gs)
@@ -356,6 +415,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])
             final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
             if not noval or final_epoch:  # Calculate mAP
+                val_loader.dataset.dataset_mode = DatasetMode.VAL
                 results, maps, _ = validate.run(data_dict,
                                                 batch_size=batch_size // WORLD_SIZE * 2,
                                                 imgsz=imgsz,
@@ -407,6 +467,24 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         if stop:
             break  # must break all DDP ranks
 
+        # TLC Metrics Collection START ---------------------------------------------------------------------------------
+        if not opt.tlc_disable_mc:
+            if epoch in tlc_metrics_collection_epochs and RANK in {-1, 0}:
+                for table in (train_table, val_table):
+                    collect.run(
+                        model=ema.ema,
+                        table=table,
+                        epoch=epoch,
+                        stride=gs,
+                        imgsz=imgsz,  # Infer on the same size images
+                        conf_thres=opt.tlc_mc_conf_thres,
+                        iou_thres=opt.tlc_mc_nms_iou_thres,
+                        max_det=opt.tlc_mc_max_det,
+                        tlc_iou_thres=opt.tlc_mc_iou_thres,
+                        workers=workers,
+                        half=amp)
+
+        # TLC Metrics Collection END -----------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
     # end training -----------------------------------------------------------------------------------------------------
     if RANK in {-1, 0}:
@@ -436,6 +514,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         callbacks.run('on_train_end', last, best, epoch, results)
 
     torch.cuda.empty_cache()
+    if not opt.tlc_disable_mc:
+        tlc.close()
     return results
 
 
@@ -475,6 +555,70 @@ def parse_opt(known=False):
     parser.add_argument('--save-period', type=int, default=-1, help='Save checkpoint every x epochs (disabled if < 1)')
     parser.add_argument('--seed', type=int, default=0, help='Global training seed')
     parser.add_argument('--local_rank', type=int, default=-1, help='Automatic DDP Multi-GPU argument, do not modify')
+
+    # Extra arguments
+    parser.add_argument('--extra-dist-timeout',
+                        type=int,
+                        default=0,
+                        help='Extra timeout in seconds, for when metrics collection is time-consuming')
+
+    # 3LC arguments
+    parser.add_argument('--tlc-disable-mc',
+                        '--tlc-disable-metrics-collection',
+                        dest='tlc_disable_mc',
+                        action='store_true',
+                        help='Disable 3LC metrics collection.')
+    parser.add_argument('--tlc-mc-interval',
+                        '--tlc-metrics-collection-interval',
+                        dest='tlc_mc_interval',
+                        type=int,
+                        default=1,
+                        help='Epoch interval between metrics collections.')
+    parser.add_argument('--tlc-mc-start',
+                        '--tlc-metrics-collection-start',
+                        dest='tlc_mc_start',
+                        type=int,
+                        default=0,
+                        help='Epoch to start collecting metrics. Defaults to first epoch (0).')
+    parser.add_argument('--tlc-mc-before-training',
+                        '--tlc-metrics-collection-before-training',
+                        dest='tlc_mc_before_training',
+                        action='store_true',
+                        help='Collect metrics before training.')
+    parser.add_argument('--tlc-mc-iou-thres',
+                        '--tlc-metrics-collection-iou-threshold',
+                        dest='tlc_mc_iou_thres',
+                        type=float,
+                        default=0.3,
+                        help='IoU threshold for 3LC metrics collection.')
+    parser.add_argument('--tlc-mc-conf-thres',
+                        '--tlc-metrics-collection-confidence-threshold',
+                        dest='tlc_mc_conf_thres',
+                        type=float,
+                        default=0.25,
+                        help='NMS Confidence threshold for metrics collection')
+    parser.add_argument('--tlc-mc-nms-iou-thres',
+                        '--tlc-metrics-collection-nms-iou-threshold',
+                        dest='tlc_mc_nms_iou_thres',
+                        type=float,
+                        default=0.45,
+                        help='IoU threshold for metrics collection NMS')
+    parser.add_argument('--tlc-mc-max-det',
+                        '--tlc-metrics-collection-max-det',
+                        dest='tlc_mc_max_det',
+                        type=int,
+                        default=300,
+                        help='Maximum number of detections per image for metrics collection')
+    parser.add_argument('--tlc-train-revision',
+                        type=str,
+                        default='',
+                        help='Train dataset revision, defaults to latest.')
+    parser.add_argument('--tlc-val-revision',
+                        type=str,
+                        default='',
+                        help='Validation dataset revision, defaults to latest.')
+    parser.add_argument('--tlc-root-url', type=str, default=None, help='Root URL for datasets. Defaults to None.')
+    parser.add_argument('--tlc-disable-sample-weights', action='store_true', help='Disable sampling weights.')
 
     # Logger arguments
     parser.add_argument('--entity', default=None, help='Entity')
@@ -529,7 +673,9 @@ def main(opt, callbacks=Callbacks()):
         assert torch.cuda.device_count() > LOCAL_RANK, 'insufficient CUDA devices for DDP command'
         torch.cuda.set_device(LOCAL_RANK)
         device = torch.device('cuda', LOCAL_RANK)
-        dist.init_process_group(backend='nccl' if dist.is_nccl_available() else 'gloo')
+        from torch.distributed.constants import default_pg_timeout
+        dist.init_process_group(backend='nccl' if dist.is_nccl_available() else 'gloo',
+                                timeout=default_pg_timeout + timedelta(seconds=opt.extra_dist_timeout))
 
     # Train
     if not opt.evolve:
