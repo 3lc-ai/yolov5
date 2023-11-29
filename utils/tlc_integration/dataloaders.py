@@ -320,7 +320,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
 
             if self.dataset_mode == DatasetMode.COLLECT:
                 self.rect = False
-                auto = True     # the padding will be adjusted to meet stride constraints
+                auto = True  # the padding will be adjusted to meet stride constraints
                 scaleup = True  # the image should be scaled up if it's smaller than letterbox shape
 
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape

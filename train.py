@@ -673,9 +673,8 @@ def main(opt, callbacks=Callbacks()):
         assert torch.cuda.device_count() > LOCAL_RANK, 'insufficient CUDA devices for DDP command'
         torch.cuda.set_device(LOCAL_RANK)
         device = torch.device('cuda', LOCAL_RANK)
-        from torch.distributed.constants import default_pg_timeout
         dist.init_process_group(backend='nccl' if dist.is_nccl_available() else 'gloo',
-                                timeout=default_pg_timeout + timedelta(seconds=opt.extra_dist_timeout))
+                                timeout=timedelta(seconds=10800))
 
     # Train
     if not opt.evolve:
