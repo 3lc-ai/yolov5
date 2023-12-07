@@ -64,7 +64,7 @@ from utils.loggers.comet.comet_utils import check_comet_resume
 from utils.loss import ComputeLoss
 from utils.metrics import fitness
 from utils.plots import plot_evolve
-from utils.tlc_integration import DatasetMode, create_dataloader, get_or_create_tlc_table
+from utils.tlc_integration import TLCComputeLoss, create_dataloader, get_or_create_tlc_table
 from utils.tlc_integration.utils import create_tlc_info_string_before_training
 from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_device, smart_DDP, smart_optimizer,
                                smart_resume, torch_distributed_zero_first)
@@ -82,6 +82,13 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls, opt.evolve, opt.data, opt.cfg, \
         opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze
     callbacks.run('on_pretrain_routine_start')
+
+    if opt.tlc_image_embeddings_dim in [2, 3]:
+        # We need to ensure we have UMAP installed
+        try:
+            import umap  # noqa: F401
+        except ImportError:
+            raise ValueError('Missing UMAP dependency, run `pip install umap-learn` to enable embeddings collection.')
 
     # Directories
     w = save_dir / 'weights'  # weights dir
@@ -119,16 +126,18 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     cuda = device.type != 'cpu'
     init_seeds(opt.seed + 1 + RANK, deterministic=True)
     with torch_distributed_zero_first(LOCAL_RANK):
-        data_dict = data_dict or check_dataset(data)  # check if None
 
         train_table, val_table = (get_or_create_tlc_table(
-            input_url=data,
+            yolo_yaml_file=data,
             root_url=opt.tlc_root_url,
             split=split,
-            revision_url=opt.tlc_train_revision if split == 'train' else opt.tlc_val_revision,
+            revision_url=opt.tlc_train_revision_url if split == 'train' else opt.tlc_val_revision_url,
         ) for split in ('train', 'val'))
 
-    train_path, val_path = data_dict['train'], data_dict['val']
+        if data and not data_dict:
+            # If data argument is not provided, this means 3LC revision Urls have been provided
+            data_dict = check_dataset(data)
+
     # Make sure train and val tables have same number of classes
     train_categories = train_table.get_value_map_for_column(BOUNDING_BOXES)
     val_categories = val_table.get_value_map_for_column(BOUNDING_BOXES)
@@ -138,6 +147,13 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
     nc = 1 if single_cls else len(train_categories)
     names = {0: 'item'} if single_cls and len(train_categories) != 1 else train_categories
+    if not data_dict:
+        # --data argument was explicitly set empty, use 3LC Table to
+        # populate data dict as far as possible.
+        data_dict = {'nc': nc, 'train': None, 'val': None}
+
+    train_path, val_path = data_dict['train'], data_dict['val']
+
     is_coco = isinstance(val_path, str) and val_path.endswith('coco/val2017.txt')  # COCO dataset
 
     # Model
@@ -230,8 +246,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         shuffle=True,
         seed=opt.seed,
         table=train_table,
-        tlc_sampling_weights=not opt.tlc_disable_sample_weights,
-        dataset_mode=DatasetMode.TRAIN)  # Use sampling weights in training
+        tlc_sampling_weights=not opt.tlc_disable_sample_weights,  # Use sampling weights in training
+    )
     labels = np.concatenate(dataset.labels, 0)
     mlc = int(labels[:, 0].max())  # max label class
     assert mlc < nc, f'Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}'
@@ -252,7 +268,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             pad=0.5,
             prefix=colorstr('val: '),
             table=val_table,
-            dataset_mode=DatasetMode.VAL)[0]
+        )[0]
 
         if not resume:
             if not opt.noautoanchor:
@@ -281,9 +297,17 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                           1, opt.tlc_mc_interval) if not opt.tlc_disable_mc else []
     tlc_mc_string = create_tlc_info_string_before_training(tlc_metrics_collection_epochs, opt.tlc_mc_before_training)
     LOGGER.info(colorstr('3LC: ') + tlc_mc_string)
+    compute_loss = ComputeLoss(model)  # init loss class
+
+    if RANK in {-1, 0} and not opt.tlc_disable_mc and opt.tlc_mc_collect_loss:
+        m = de_parallel(model).model[-1]  # Detect() module
+        compute_loss_tlc = TLCComputeLoss('cpu', model.hyp, m.stride, m.na, m.nc, m.nl,
+                                          m.anchors)  # init loss class on cpu
+    else:
+        compute_loss_tlc = None
 
     if RANK in {-1, 0} and not opt.tlc_disable_mc:
-        tlc.init(train_table.project_name)
+        run = tlc.init(train_table.project_name)
 
         # Collect metrics prior to training?
         if opt.tlc_mc_before_training:
@@ -299,7 +323,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     max_det=opt.tlc_mc_max_det,
                     tlc_iou_thres=opt.tlc_mc_iou_thres,
                     workers=workers,
-                    half=amp)
+                    half=amp,
+                    tlc_image_embeddings_dim=opt.tlc_image_embeddings_dim,
+                    compute_loss=compute_loss_tlc)
 
     # 3LC Setup End ----------------------------------------------------------------------------------------------------
 
@@ -314,7 +340,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = torch.cuda.amp.GradScaler(enabled=amp)
     stopper, stop = EarlyStopping(patience=opt.patience), False
-    compute_loss = ComputeLoss(model)  # init loss class
     callbacks.run('on_train_start')
 
     LOGGER.info(f'Image sizes {imgsz} train, {imgsz} val\n'
@@ -415,18 +440,19 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])
             final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
             if not noval or final_epoch:  # Calculate mAP
-                val_loader.dataset.dataset_mode = DatasetMode.VAL
-                results, maps, _ = validate.run(data_dict,
-                                                batch_size=batch_size // WORLD_SIZE * 2,
-                                                imgsz=imgsz,
-                                                half=amp,
-                                                model=ema.ema,
-                                                single_cls=single_cls,
-                                                dataloader=val_loader,
-                                                save_dir=save_dir,
-                                                plots=False,
-                                                callbacks=callbacks,
-                                                compute_loss=compute_loss)
+                results, maps, _ = validate.run(
+                    data_dict,
+                    batch_size=batch_size // WORLD_SIZE * 2,
+                    imgsz=imgsz,
+                    half=amp,
+                    model=ema.ema,
+                    single_cls=single_cls,
+                    dataloader=val_loader,
+                    save_dir=save_dir,
+                    plots=False,
+                    callbacks=callbacks,
+                    compute_loss=compute_loss,
+                )
 
             # Update best mAP
             fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
@@ -482,7 +508,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                         max_det=opt.tlc_mc_max_det,
                         tlc_iou_thres=opt.tlc_mc_iou_thres,
                         workers=workers,
-                        half=amp)
+                        half=amp,
+                        tlc_image_embeddings_dim=opt.tlc_image_embeddings_dim,
+                        compute_loss=compute_loss_tlc)
 
         # TLC Metrics Collection END -----------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
@@ -507,13 +535,18 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                         verbose=True,
                         plots=plots,
                         callbacks=callbacks,
-                        compute_loss=compute_loss)  # val best model with plots
+                        compute_loss=compute_loss,  # val best model with plots
+                        tlc_discard_non_zero_preds=opt.tlc_discard_non_zero_preds,
+                    )
                     if is_coco:
                         callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)
 
         callbacks.run('on_train_end', last, best, epoch, results)
 
     torch.cuda.empty_cache()
+    if RANK in {-1, 0} and opt.tlc_image_embeddings_dim in (2, 3):
+        # Reduce the embeddings to the desired dimensionality
+        run.reduce_embeddings_by_example_table_url(train_table.url, n_components=opt.tlc_image_embeddings_dim)
     if not opt.tlc_disable_mc:
         tlc.close()
     return results
@@ -555,12 +588,6 @@ def parse_opt(known=False):
     parser.add_argument('--save-period', type=int, default=-1, help='Save checkpoint every x epochs (disabled if < 1)')
     parser.add_argument('--seed', type=int, default=0, help='Global training seed')
     parser.add_argument('--local_rank', type=int, default=-1, help='Automatic DDP Multi-GPU argument, do not modify')
-
-    # Extra arguments
-    parser.add_argument('--extra-dist-timeout',
-                        type=int,
-                        default=0,
-                        help='Extra timeout in seconds, for when metrics collection is time-consuming')
 
     # 3LC arguments
     parser.add_argument('--tlc-disable-mc',
@@ -609,16 +636,25 @@ def parse_opt(known=False):
                         type=int,
                         default=300,
                         help='Maximum number of detections per image for metrics collection')
-    parser.add_argument('--tlc-train-revision',
+    parser.add_argument('--tlc-mc-collect-loss', action='store_true', help='Collect loss during metrics collection')
+    parser.add_argument('--tlc-train-revision-url',
                         type=str,
                         default='',
                         help='Train dataset revision, defaults to latest.')
-    parser.add_argument('--tlc-val-revision',
+    parser.add_argument('--tlc-val-revision-url',
                         type=str,
                         default='',
                         help='Validation dataset revision, defaults to latest.')
     parser.add_argument('--tlc-root-url', type=str, default=None, help='Root URL for datasets. Defaults to None.')
     parser.add_argument('--tlc-disable-sample-weights', action='store_true', help='Disable sampling weights.')
+    parser.add_argument('--tlc-discard-non-zero-preds',
+                        action='store_true',
+                        help='Discard predictions with class != 0 before validating')
+    parser.add_argument(
+        '--tlc-image-embeddings-dim',
+        type=int,
+        default=0,
+        help='Dimension of image embeddings (2 or 3). Default is 0, which means no image embeddings are used.')
 
     # Logger arguments
     parser.add_argument('--entity', default=None, help='Entity')
@@ -673,9 +709,8 @@ def main(opt, callbacks=Callbacks()):
         assert torch.cuda.device_count() > LOCAL_RANK, 'insufficient CUDA devices for DDP command'
         torch.cuda.set_device(LOCAL_RANK)
         device = torch.device('cuda', LOCAL_RANK)
-        from torch.distributed.constants import default_pg_timeout
         dist.init_process_group(backend='nccl' if dist.is_nccl_available() else 'gloo',
-                                timeout=default_pg_timeout + timedelta(seconds=opt.extra_dist_timeout))
+                                timeout=timedelta(seconds=10800))
 
     # Train
     if not opt.evolve:
