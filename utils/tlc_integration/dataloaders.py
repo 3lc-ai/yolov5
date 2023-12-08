@@ -2,13 +2,13 @@
 """
 Dataloaders and dataset utils - 3LC integration
 """
-import math
 import os
-import random
+from collections import Counter
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
 import numpy as np
+import tlc
 import torch
 from PIL import Image, ImageOps
 from tlc.core.builtins.constants.column_names import BOUNDING_BOXES, HEIGHT, IMAGE, SAMPLE_WEIGHT, WIDTH
@@ -16,12 +16,12 @@ from tlc.core.url import Url
 from torch.utils.data import DataLoader, distributed
 from tqdm import tqdm
 
-from utils.augmentations import Albumentations, augment_hsv, letterbox, mixup, random_perspective
-from utils.general import LOGGER, NUM_THREADS, TQDM_BAR_FORMAT, cv2, xywhn2xyxy, xyxy2xywhn
+from utils.augmentations import Albumentations
+from utils.general import LOGGER, NUM_THREADS, TQDM_BAR_FORMAT, colorstr, cv2
 from utils.torch_utils import torch_distributed_zero_first
 
 from ..dataloaders import InfiniteDataLoader, LoadImagesAndLabels, img2label_paths, seed_worker
-from .utils import DatasetMode, tlc_table_row_to_yolo_label
+from .utils import tlc_table_row_to_yolo_label
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -48,15 +48,16 @@ def create_dataloader(
     seed=0,
     table=None,
     tlc_sampling_weights=False,
-    dataset_mode=DatasetMode.TRAIN,
 ):
     if rect and shuffle:
         LOGGER.warning('WARNING ⚠️ --rect is incompatible with DataLoader shuffle, setting shuffle=False')
         shuffle = False
 
     assert table is not None, 'table must be provided'
+    tlc_prefix = colorstr('3LC: ')
 
     with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
+        LOGGER.info(f'{tlc_prefix}Creating dataloader for {table.dataset_name} dataset')
         dataset = TLCLoadImagesAndLabels(
             path,
             imgsz,
@@ -69,17 +70,17 @@ def create_dataloader(
             stride=int(stride),
             pad=pad,
             image_weights=image_weights,
-            prefix=prefix,
+            prefix=tlc_prefix,
             table=table,
             tlc_sampling_weights=tlc_sampling_weights,
-            dataset_mode=dataset_mode,
         )
 
     batch_size = min(batch_size, len(dataset))
     nd = torch.cuda.device_count()  # number of CUDA devices
     nw = min([os.cpu_count() // max(nd, 1), batch_size if batch_size > 1 else 0, workers])  # number of workers
     sampler = (None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle))
-    loader = (DataLoader if image_weights else InfiniteDataLoader)  # only DataLoader allows for attribute updates
+    loader = (DataLoader if (image_weights or tlc_sampling_weights) else InfiniteDataLoader
+              )  # only DataLoader allows for attribute updates
     generator = torch.Generator()
     generator.manual_seed(6148914691236517205 + seed + RANK)
     return (
@@ -125,9 +126,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
         prefix='',
         table=None,
         tlc_sampling_weights=False,
-        dataset_mode=DatasetMode.TRAIN,
     ):
-        self.dataset_mode = dataset_mode
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -137,12 +136,15 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
         self.mosaic_border = [-img_size // 2, -img_size // 2]
         self.stride = stride
         self.path = path
+        self.prefix = prefix
         self.albumentations = Albumentations(size=img_size) if augment else None
 
         if rect and tlc_sampling_weights:
             raise ValueError('Rectangular training is not compatible with 3LC sampling weights')
 
         self.tlc_use_sampling_weights = tlc_sampling_weights
+        if tlc_sampling_weights:
+            LOGGER.info(f'{prefix}Using 3LC sampling weights')
 
         # Get 3lc table - read the yolo image and label paths and any revisions
         self.categories = table.get_value_map_for_column(BOUNDING_BOXES)
@@ -155,15 +157,23 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
         self.labels = []
 
         num_fixed, num_corrupt = 0, 0
-        for row in table.table_rows:
-            im_file = Url(row[IMAGE]).to_absolute().to_str()
+        msgs = []
 
-            fixed, corrupt, _ = fix_image(im_file)
+        pbar = iter(table.table_rows)
+        if RANK in {-1, 0}:
+            pbar = tlc.track(pbar, description=f'Loading data from 3LC Table {table.url.name}', total=len(table))
+
+        for row in pbar:
+            im_file = Url(row[IMAGE]).to_absolute().to_str()
+            fixed, corrupt, msg = fix_image(im_file)
+            if msg:
+                msgs.append(msg)
             num_fixed += int(fixed)
             num_corrupt += int(corrupt)
+
             # Ignore corrupt images when training or validating
             # Don't ignore when collecting metrics since the dataset length will change
-            if dataset_mode == DatasetMode.COLLECT or not corrupt:
+            if not corrupt or table.collecting_metrics:
                 self.sampling_weights.append(row[SAMPLE_WEIGHT])
                 self.im_files.append(str(Path(im_file)))  # Ensure path is os.sep-delimited
                 self.shapes.append((row[WIDTH], row[HEIGHT]))
@@ -171,12 +181,17 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
 
         self.shapes = np.array(self.shapes)
         self.sampling_weights = np.array(self.sampling_weights)
+        self.sampling_weights = self.sampling_weights / np.sum(self.sampling_weights)
 
         if num_fixed > 0 or num_corrupt > 0:
             LOGGER.info(f'Fixed {num_fixed} images. Found and ignored {num_corrupt} corrupt images')
 
+        if len(msgs) > 0:
+            LOGGER.info('\n'.join(msgs))
+
         n = len(self.im_files)
-        self.label_files = img2label_paths(self.im_files)
+        self.label_files = img2label_paths(
+            self.im_files)  # .label_files is not really used in the 3LC integration, as labels are stored in the table
         self.segments = tuple([] for _ in range(n))  # TODO: Add segmentation support
 
         # Filter images
@@ -210,7 +225,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
                 self.labels[i][:, 0] = 0
 
         # Rectangular Training
-        if self.rect and dataset_mode != DatasetMode.COLLECT:
+        if self.rect:
             # Sort by aspect ratio
             s = self.shapes  # wh
             ar = s[:, 1] / s[:, 0]  # aspect ratio
@@ -264,120 +279,32 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
                 pbar.desc = f'{prefix}Caching images ({b / gb:.1f}GB {cache_images})'
             pbar.close()
 
+    @staticmethod
+    def _print_histogram_with_buckets(data, num_buckets=10) -> None:
+        # Bucketing data
+        bucket_size = (max(data) - min(data)) // num_buckets
+        bucketed_data = [x // bucket_size * bucket_size for x in data]
+        counter = Counter(bucketed_data)
+        max_count = max(counter.values())
+
+        for value in range(min(bucketed_data), max(bucketed_data) + bucket_size, bucket_size):
+            count = counter.get(value, 0)
+            bar = '*' * int(count / max_count * 50)  # Scale the bar length
+            LOGGER.info(f'{value:5} - {value + bucket_size - 1:5} | {bar}')
+
     def resample(self, epoch=None):
         if self.tlc_use_sampling_weights:
             # Seed such that each process does the same sampling
             if epoch is not None:
                 np.random.seed(epoch)
-
+            LOGGER.info(f'{self.prefix}Resampling dataset for epoch {epoch}')
             # Sample indices weighted by 3LC sampling weight
             self.indices = np.random.choice(
                 len(self.indices),
                 size=len(self.indices),
                 replace=True,
-                p=self.sampling_weights / self.sampling_weights.sum(),
+                p=self.sampling_weights,
             )
-
-    def load_image(self, i):
-        # Loads 1 image from dataset index 'i', returns (im, original hw, resized hw)
-        im, f, fn = self.ims[i], self.im_files[i], self.npy_files[i],
-        if im is None:  # not cached in RAM
-            if fn.exists():  # load npy
-                im = np.load(fn)
-            else:  # read image
-                im = cv2.imread(f)  # BGR
-                assert im is not None, f'Image Not Found {f}'
-            h0, w0 = im.shape[:2]  # orig hw
-            if self.dataset_mode in (DatasetMode.TRAIN, DatasetMode.VAL):
-                r = self.img_size / max(h0, w0)  # ratio
-                if r != 1:  # if sizes are not equal
-                    interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
-                    im = cv2.resize(im, (math.ceil(w0 * r), math.ceil(h0 * r)), interpolation=interp)
-            return im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
-        return self.ims[i], self.im_hw0[i], self.im_hw[i]  # im, hw_original, hw_resized
-
-    def __getitem__(self, index):
-        index = self.indices[index]  # linear, shuffled, or image_weights
-
-        hyp = self.hyp
-        mosaic = self.mosaic and random.random() < hyp['mosaic']
-        if mosaic:
-            # Load mosaic
-            img, labels = self.load_mosaic(index)
-            shapes = None
-
-            # MixUp augmentation
-            if random.random() < hyp['mixup']:
-                img, labels = mixup(img, labels, *self.load_mosaic(random.randint(0, self.n - 1)))
-
-        else:
-            # Load image
-            img, (h0, w0), (h, w) = self.load_image(index)
-
-            # Letterbox
-            auto = False
-            scaleup = self.augment
-
-            if self.dataset_mode == DatasetMode.COLLECT:
-                self.rect = False
-                auto = True     # the padding will be adjusted to meet stride constraints
-                scaleup = True  # the image should be scaled up if it's smaller than letterbox shape
-
-            shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
-
-            img, ratio, pad = letterbox(img, shape, auto=auto, scaleup=scaleup, stride=self.stride)
-            shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
-
-            labels = self.labels[index].copy()
-            if labels.size and self.dataset_mode != DatasetMode.COLLECT:  # normalized xywh to pixel xyxy format
-                labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
-
-            if self.augment:
-                img, labels = random_perspective(img,
-                                                 labels,
-                                                 degrees=hyp['degrees'],
-                                                 translate=hyp['translate'],
-                                                 scale=hyp['scale'],
-                                                 shear=hyp['shear'],
-                                                 perspective=hyp['perspective'])
-
-        nl = len(labels)  # number of labels
-        if nl and self.dataset_mode != DatasetMode.COLLECT:
-            labels[:, 1:5] = xyxy2xywhn(labels[:, 1:5], w=img.shape[1], h=img.shape[0], clip=True, eps=1E-3)
-
-        if self.augment:
-            # Albumentations
-            img, labels = self.albumentations(img, labels)
-            nl = len(labels)  # update after albumentations
-
-            # HSV color-space
-            augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
-
-            # Flip up-down
-            if random.random() < hyp['flipud']:
-                img = np.flipud(img)
-                if nl:
-                    labels[:, 2] = 1 - labels[:, 2]
-
-            # Flip left-right
-            if random.random() < hyp['fliplr']:
-                img = np.fliplr(img)
-                if nl:
-                    labels[:, 1] = 1 - labels[:, 1]
-
-            # Cutouts
-            # labels = cutout(img, labels, p=0.5)
-            # nl = len(labels)  # update after cutout
-
-        labels_out = torch.zeros((nl, 6))
-        if nl:
-            labels_out[:, 1:] = torch.from_numpy(labels)
-
-        # Convert
-        img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
-        img = np.ascontiguousarray(img)
-
-        return torch.from_numpy(img), labels_out, self.im_files[index], shapes
 
 
 def fix_image(im_file):
@@ -397,7 +324,7 @@ def fix_image(im_file):
                     fixed = True
 
     except Exception as e:
-        LOGGER.error(f'WARNING ⚠️ {im_file}: ignoring corrupt image/label: {e}')
+        msg = f'WARNING ⚠️ {im_file}: ignoring corrupt image/label: {e}'
         corrupt = True
 
     return fixed, corrupt, msg

@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import tlc
 import torch
 from tqdm import tqdm
 
@@ -38,12 +39,12 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.common import DetectMultiBackend
 from utils.callbacks import Callbacks
-from utils.dataloaders import create_dataloader
 from utils.general import (LOGGER, TQDM_BAR_FORMAT, Profile, check_dataset, check_img_size, check_requirements,
                            check_yaml, coco80_to_coco91_class, colorstr, increment_path, non_max_suppression,
                            print_args, scale_boxes, xywh2xyxy, xyxy2xywh)
 from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
+from utils.tlc_integration import create_dataloader, get_or_create_tlc_table
 from utils.torch_utils import select_device, smart_inference_mode
 
 
@@ -125,6 +126,8 @@ def run(
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
+        tlc_discard_non_zero_preds=False,
+        tlc_revision_url=None,
 ):
     # Initialize/load model and set device
     training = model is not None
@@ -152,8 +155,20 @@ def run(
                 batch_size = 1  # export.py models default to batch-size 1
                 LOGGER.info(f'Forcing --batch-size 1 square inference (1,3,{imgsz},{imgsz}) for non-PyTorch models')
 
+        table = get_or_create_tlc_table(
+            yolo_yaml_file=data,
+            split=task,
+            revision_url=tlc_revision_url,
+        )
+
         # Data
-        data = check_dataset(data)  # check
+        if data:
+            data = check_dataset(data)  # check
+        else:
+            # --data argument was explicitly set empty, use 3LC Table to
+            # populate data dict as far as possible.
+            nc = len(table.get_value_map_for_column(tlc.BOUNDING_BOXES))
+            data = {'val': None, 'train': None, 'nc': nc}
 
     # Configure
     model.eval()
@@ -172,15 +187,18 @@ def run(
         model.warmup(imgsz=(1 if pt else batch_size, 3, imgsz, imgsz))  # warmup
         pad, rect = (0.0, False) if task == 'speed' else (0.5, pt)  # square inference for benchmarks
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
-        dataloader = create_dataloader(data[task],
-                                       imgsz,
-                                       batch_size,
-                                       stride,
-                                       single_cls,
-                                       pad=pad,
-                                       rect=rect,
-                                       workers=workers,
-                                       prefix=colorstr(f'{task}: '))[0]
+        dataloader = create_dataloader(
+            data[task],
+            imgsz,
+            batch_size,
+            stride,
+            single_cls,
+            pad=pad,
+            rect=rect,
+            workers=workers,
+            prefix=colorstr(f'{task}: '),
+            table=table,
+        )[0]
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -227,6 +245,10 @@ def run(
 
         # Metrics
         for si, pred in enumerate(preds):
+            if tlc_discard_non_zero_preds:
+                # Filter out predictions with class != 0.
+                # This is useful if you want to evaluate the model on a dataset where only label 0 is relevant.
+                pred = pred[pred[:, 5] == 0]
             labels = targets[targets[:, 0] == si, 1:]
             nl, npr = labels.shape[0], pred.shape[0]  # number of labels, predictions
             path, shape = Path(paths[si]), shapes[si][0]
@@ -363,6 +385,17 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+
+    # 3LC arguments
+    parser.add_argument('--tlc-revision-url',
+                        type=str,
+                        default='',
+                        help='URL to the revision of the 3LC dataset to collect metrics for')
+
+    parser.add_argument('--tlc-discard-non-zero-preds',
+                        action='store_true',
+                        help='Discard predictions with class != 0 before validating')
+
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')

@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 if platform.system() != 'Windows':
     ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
+import utils.tlc_integration.collectors as collectors
 from models.common import *  # noqa
 from models.experimental import *  # noqa
 from utils.autoanchor import check_anchor_order
@@ -119,6 +120,9 @@ class BaseModel(nn.Module):
             if profile:
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run
+            if 'SPPF' in m.type and hasattr(self, 'collecting') and self.collecting:
+                activations = x.mean(dim=(2, 3))
+                collectors.ACTIVATIONS.append(activations)
             y.append(x if m.i in self.save else None)  # save output
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
@@ -185,6 +189,7 @@ class DetectionModel(BaseModel):
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
         self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
         self.inplace = self.yaml.get('inplace', True)
+        self.collecting = False
 
         # Build strides, anchors
         m = self.model[-1]  # Detect()
