@@ -202,6 +202,7 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--batch-size', type=int, default=32, help='Batch size for metrics collection. Defaults to 32.')
+
     # 3LC args
     parser.add_argument('--tlc-iou-thres',
                         type=float,
