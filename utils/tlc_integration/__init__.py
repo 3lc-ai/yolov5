@@ -2,7 +2,8 @@
 from .collectors import (NoOpMetricsCollectorWithModel, Preprocessor, YOLOv5BoundingBoxMetricsCollector,
                          tlc_create_metrics_collectors)
 from .dataloaders import create_dataloader
-from .utils import DatasetMode, get_or_create_tlc_table
+from .loss import TLCComputeLoss
+from .utils import get_or_create_tlc_table
 
 __all__ = (NoOpMetricsCollectorWithModel, Preprocessor, YOLOv5BoundingBoxMetricsCollector,
-           tlc_create_metrics_collectors, create_dataloader, get_or_create_tlc_table, DatasetMode)
+           tlc_create_metrics_collectors, create_dataloader, get_or_create_tlc_table, TLCComputeLoss)
