@@ -33,7 +33,7 @@ from utils.torch_utils import select_device, smart_inference_mode
 def run(
         data=ROOT / 'data/coco128.yaml',  # dataset.yaml path
         weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
-        batch_size=1,  # batch size TODO: Support batch size > 1
+        batch_size=32,  # batch size
         imgsz=640,  # inference size (pixels)
         conf_thres=0.001,  # confidence threshold
         iou_thres=0.6,  # NMS IoU threshold
@@ -201,7 +201,8 @@ def parse_opt():
     parser.add_argument('--single-cls', action='store_true', help='treat as single-class dataset')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-    parser.add_argument('--batch-size', type=int, default=1, help='Batch size for metrics collection. Defaults to 4.')
+    parser.add_argument('--batch-size', type=int, default=32, help='Batch size for metrics collection. Defaults to 32.')
+
     # 3LC args
     parser.add_argument('--tlc-iou-thres',
                         type=float,

@@ -315,6 +315,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 collect.run(
                     model=ema.ema,
                     table=table,
+                    batch_size=batch_size // WORLD_SIZE * 2,
                     stride=gs,
                     epoch=-1,
                     imgsz=imgsz,  # Infer on the same size images
@@ -500,6 +501,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     collect.run(
                         model=ema.ema,
                         table=table,
+                        batch_size=batch_size // WORLD_SIZE * 2,
                         epoch=epoch,
                         stride=gs,
                         imgsz=imgsz,  # Infer on the same size images
