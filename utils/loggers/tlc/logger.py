@@ -77,6 +77,7 @@ class TLCLogger(BaseTLCCallback):
         self.current_epoch = None
         self.train_table = None
         self.val_table = None
+        self.run = None
         self.collected_for_epochs = set()  # Which epochs have we collected metrics for
 
         # Read 3LC specific settings from environment variables
@@ -222,17 +223,18 @@ class TLCLogger(BaseTLCCallback):
         if self.should_collect_metrics():
             self.collected_for_epochs.add(self.current_epoch)
 
-        # Store the validation outputs for the epoch
-        val_metrics = {
-            "val precision": vals[3],  # mp
-            "val recall": vals[4],  # mr
-            "val mAP50": vals[5],  # map50
-            "val mAP50-95": vals[6],  # map
-            "val loss": vals[7],  # *(loss.cpu() / len(dataloader)
-            "learning rate": vals[-1],
-            "epoch": epoch,
-        }
-        self.run.add_output_value(val_metrics)
+        if self.run is not None:
+            # Store the validation outputs for the epoch
+            val_metrics = {
+                "val precision": vals[3],  # mp
+                "val recall": vals[4],  # mr
+                "val mAP50": vals[5],  # map50
+                "val mAP50-95": vals[6],  # map
+                "val loss": vals[7],  # *(loss.cpu() / len(dataloader)
+                "learning rate": vals[-1],
+                "epoch": epoch,
+            }
+            self.run.add_output_value(val_metrics)
 
     def on_train_end(self, results: list[int | float]) -> None:
         """
@@ -247,21 +249,7 @@ class TLCLogger(BaseTLCCallback):
                 n_components=self._settings.image_embeddings_dim,
             )
 
-        self._log_final_metrics(results)
-
         tlc.close()
-
-    def _log_final_metrics(self, results: list[int | float]) -> None:
-        """Write the final aggregate metrics to the run."""
-        pass
-        # final_metrics = {
-        #     'val_precision': results[0],  # mp
-        #     'val_recall': results[1],  # mr
-        #     'val_mAP50': results[2],  # map50
-        #     'val_mAP': results[3],  # map
-        #     'val_loss': results[4], }  # *(loss.cpu() / len(dataloader)
-
-        # self.run.add_output_value(final_metrics)
 
     def should_collect_metrics(self) -> bool:
         """
