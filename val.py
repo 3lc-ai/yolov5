@@ -287,7 +287,7 @@ def run(
             plot_images(im, targets, paths, save_dir / f"val_batch{batch_i}_labels.jpg", names)  # labels
             plot_images(im, output_to_target(preds), paths, save_dir / f"val_batch{batch_i}_pred.jpg", names)  # pred
 
-        callbacks.run("on_val_batch_end", batch_i, im, targets, paths, shapes, preds)
+        callbacks.run("on_val_batch_end", batch_i, im, targets, paths, shapes, preds, train_out)
 
     # Compute metrics
     stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
@@ -367,7 +367,7 @@ def parse_opt():
     parser.add_argument("--conf-thres", type=float, default=0.001, help="confidence threshold")
     parser.add_argument("--iou-thres", type=float, default=0.6, help="NMS IoU threshold")
     parser.add_argument("--max-det", type=int, default=300, help="maximum detections per image")
-    parser.add_argument("--task", default="val", help="train, val, test, speed or study")
+    parser.add_argument("--task", default="val", help="train, val, test, collect, speed or study")
     parser.add_argument("--device", default="", help="cuda device, i.e. 0 or 0,1,2,3 or cpu")
     parser.add_argument("--workers", type=int, default=8, help="max dataloader workers (per RANK in DDP mode)")
     parser.add_argument("--single-cls", action="store_true", help="treat as single-class dataset")
@@ -399,6 +399,11 @@ def main(opt):
         if opt.save_hybrid:
             LOGGER.info("WARNING ⚠️ --save-hybrid will return high mAP from hybrid labels, not from predictions alone")
         run(**vars(opt))
+
+    elif opt.task == "collect":
+        from utils.loggers.tlc import collect_metrics
+
+        collect_metrics(opt)
 
     else:
         weights = opt.weights if isinstance(opt.weights, list) else [opt.weights]
