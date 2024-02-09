@@ -122,16 +122,14 @@ class Settings:
             (self.collection_val_only, "collect only on val set"),
             (self.collect_loss, "collect loss values"),
             (self.image_embeddings_dim > 0, "collect image embeddings"),
-            (self.collection_epoch_start, "collect metrics during training"),
+            (self.collection_epoch_start >= 0, "collect metrics during training"),
         ]
 
         for setting, description in cases:
             assert not (self.collection_disable and setting), f"Cannot disable collection and {description}."
 
         # Collection epoch settings
-        assert (
-            self.collection_epoch_start is None or self.collection_epoch_start >= 0
-        ), f"Invalid collection start epoch {self.collection_epoch_start}."
+        assert self.collection_epoch_start >= -1, f"Invalid collection start epoch {self.collection_epoch_start}."
         assert (
             self.collection_epoch_interval > 0
         ), f"Invalid collection epoch interval {self.collection_epoch_interval}."

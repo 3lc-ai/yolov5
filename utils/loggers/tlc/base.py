@@ -238,7 +238,8 @@ class BaseTLCCallback:
         return predn, labelsn
 
     def on_val_end(self, nt, tp, fp, p, r, f1, ap, ap50, ap_class, _=None) -> None:
-        self.write_per_class_metrics_table(nt, tp, fp, p, r, f1, ap, ap50, ap_class)
+        if self.run is not None:
+            self.write_per_class_metrics_table(nt, tp, fp, p, r, f1, ap, ap50, ap_class)
 
     def write_per_class_metrics_table(
         self,
