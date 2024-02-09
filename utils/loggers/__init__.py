@@ -15,7 +15,7 @@ from utils.loggers.wandb.wandb_utils import WandbLogger
 from utils.plots import plot_images, plot_labels, plot_results
 from utils.torch_utils import de_parallel
 
-LOGGERS = ("csv", "tb", "wandb", "clearml", "comet")  # *.csv, TensorBoard, Weights & Biases, ClearML
+LOGGERS = ("csv", "tb", "wandb", "clearml", "comet", "tlc")  # *.csv, TensorBoard, Weights & Biases, ClearML, 3LC
 RANK = int(os.getenv("RANK", -1))
 
 try:
@@ -55,6 +55,15 @@ try:
         comet_ml = None
 except (ImportError, AssertionError):
     comet_ml = None
+
+try:
+    import tlc
+
+    assert hasattr(tlc, "__version__")  # verify package import not local dir
+    from utils.loggers.tlc.logger import TLCLogger
+
+except (ImportError, AssertionError):
+    tlc = None
 
 
 def _json_default(value):
@@ -109,6 +118,12 @@ class Loggers:
             prefix = colorstr("Comet: ")
             s = f"{prefix}run 'pip install comet_ml' to automatically track and visualize YOLOv5 🚀 runs in Comet"
             self.logger.info(s)
+
+        if not tlc:
+            prefix = colorstr("3LC: ")
+            s = f"{prefix}run 'pip install tlc' to track YOLOv5 🚀 runs to debug and improve your dataset in 3LC"
+            self.logger.info(s)
+
         # TensorBoard
         s = self.save_dir
         if "tb" in self.include and not self.opt.evolve:
@@ -150,6 +165,12 @@ class Loggers:
         else:
             self.comet_logger = None
 
+        # 3LC
+        if tlc and "tlc" in self.include:
+            self.tlc_logger = TLCLogger.create_instance(self.opt, self.hyp)
+        else:
+            self.tlc_logger = None
+
     @property
     def remote_dataset(self):
         """Fetches dataset dictionary from remote logging services like ClearML, Weights & Biases, or Comet ML."""
@@ -160,6 +181,8 @@ class Loggers:
             data_dict = self.wandb.data_dict
         if self.comet_logger:
             data_dict = self.comet_logger.data_dict
+        if self.tlc_logger:
+            data_dict = TLCLogger.get_instance().data_dict
 
         return data_dict
 
@@ -167,6 +190,13 @@ class Loggers:
         """Initializes the training process for Comet ML logger if it's configured."""
         if self.comet_logger:
             self.comet_logger.on_train_start()
+
+        if self.tlc_logger:
+            TLCLogger.get_instance().on_train_start()
+
+    def on_train_epoch_start(self, epoch):
+        if self.tlc_logger:
+            TLCLogger.get_instance().on_train_epoch_start(epoch=epoch)
 
     def on_pretrain_routine_start(self):
         """Invokes pre-training routine start hook for Comet ML logger if available."""
@@ -215,10 +245,16 @@ class Loggers:
         if self.comet_logger:
             self.comet_logger.on_train_epoch_end(epoch)
 
+        if self.tlc_logger:
+            TLCLogger.get_instance().on_train_epoch_end()
+
     def on_val_start(self):
         """Callback that signals the start of a validation phase to the Comet logger."""
         if self.comet_logger:
             self.comet_logger.on_val_start()
+
+        if self.tlc_logger:
+            TLCLogger.get_instance().on_val_start()
 
     def on_val_image_end(self, pred, predn, path, names, im):
         """Callback that logs a validation image and its predictions to WandB or ClearML."""
@@ -232,6 +268,9 @@ class Loggers:
         if self.comet_logger:
             self.comet_logger.on_val_batch_end(batch_i, im, targets, paths, shapes, out)
 
+        if self.tlc_logger:
+            TLCLogger.get_instance().on_val_batch_end(batch_i, im, targets, paths, shapes, out, train_out)
+
     def on_val_end(self, nt, tp, fp, p, r, f1, ap, ap50, ap_class, confusion_matrix):
         """Logs validation results to WandB or ClearML at the end of the validation process."""
         if self.wandb or self.clearml:
@@ -243,6 +282,9 @@ class Loggers:
 
         if self.comet_logger:
             self.comet_logger.on_val_end(nt, tp, fp, p, r, f1, ap, ap50, ap_class, confusion_matrix)
+
+        if self.tlc_logger:
+            TLCLogger.get_instance().on_val_end(nt, tp, fp, p, r, f1, ap, ap50, ap_class)
 
     def on_fit_epoch_end(self, vals, epoch, best_fitness, fi):
         """Callback that logs metrics and saves them to CSV or NDJSON at the end of each fit (train+val) epoch."""
@@ -282,6 +324,9 @@ class Loggers:
 
         if self.comet_logger:
             self.comet_logger.on_fit_epoch_end(x, epoch=epoch)
+
+        if self.tlc_logger:
+            TLCLogger.get_instance().on_fit_epoch_end(vals, epoch)
 
     def on_model_save(self, last, epoch, final_epoch, best_fitness, fi):
         """Callback that handles model saving events, logging to Weights & Biases or ClearML if enabled."""
@@ -331,6 +376,11 @@ class Loggers:
         if self.comet_logger:
             final_results = dict(zip(self.keys[3:10], results))
             self.comet_logger.on_train_end(files, self.save_dir, last, best, epoch, final_results)
+
+        if self.tlc_logger:
+            TLCLogger.get_instance().on_train_end(results)
+            # Reset the instance in case of multiple runs in the same invocation
+            TLCLogger.reset_instance()
 
     def on_params_update(self, params: dict):
         """Updates experiment hyperparameters or configurations in WandB, Comet, or ClearML."""

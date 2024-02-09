@@ -495,6 +495,12 @@ def check_file(file, suffix=""):
             "clearml" in sys.modules
         ), "ClearML is not installed, so cannot use ClearML dataset. Try running 'pip install clearml'."
         return file
+    elif file.startswith("3LC://"):  # 3LC Dataset ID
+        try:
+            import tlc  # noqa: F401
+        except ImportError:
+            raise ValueError('tlc is not installed, so cannot use 3LC dataset. Try running "pip install tlc".')
+        return file
     else:  # search
         files = []
         for d in "data", "models", "utils":  # search directories

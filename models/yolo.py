@@ -25,31 +25,8 @@ if str(ROOT) not in sys.path:
 if platform.system() != "Windows":
     ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-from models.common import (
-    C3,
-    C3SPP,
-    C3TR,
-    SPP,
-    SPPF,
-    Bottleneck,
-    BottleneckCSP,
-    C3Ghost,
-    C3x,
-    Classify,
-    Concat,
-    Contract,
-    Conv,
-    CrossConv,
-    DetectMultiBackend,
-    DWConv,
-    DWConvTranspose2d,
-    Expand,
-    Focus,
-    GhostBottleneck,
-    GhostConv,
-    Proto,
-)
-from models.experimental import MixConv2d
+from models.common import *  # noqa
+from models.experimental import *  # noqa
 from utils.autoanchor import check_anchor_order
 from utils.general import LOGGER, check_version, check_yaml, colorstr, make_divisible, print_args
 from utils.plots import feature_visualization

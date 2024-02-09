@@ -43,6 +43,10 @@ ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+try:
+    import tlc
+except ImportError:
+    tlc = None
 
 import val as validate  # for end-of-epoch mAP
 from models.experimental import attempt_load
@@ -70,13 +74,13 @@ from utils.general import (
     init_seeds,
     intersect_dicts,
     labels_to_class_weights,
-    labels_to_image_weights,
     methods,
     one_cycle,
     print_args,
     print_mutation,
     strip_optimizer,
     yaml_save,
+    labels_to_image_weights,
 )
 from utils.loggers import LOGGERS, Loggers
 from utils.loggers.comet.comet_utils import check_comet_resume
@@ -93,6 +97,10 @@ from utils.torch_utils import (
     smart_resume,
     torch_distributed_zero_first,
 )
+
+if tlc:
+    from utils.loggers.tlc import check_dataset  # noqa: F811
+    from utils.loggers.tlc import Model, ModelEMA, attempt_load, check_amp, create_dataloader  # noqa: F811
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv("RANK", -1))
@@ -332,7 +340,7 @@ def train(hyp, opt, device, callbacks):
         f'Starting training for {epochs} epochs...'
     )
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
-        callbacks.run("on_train_epoch_start")
+        callbacks.run("on_train_epoch_start", epoch)
         model.train()
 
         # Update image weights (optional, single-GPU only)
@@ -340,6 +348,8 @@ def train(hyp, opt, device, callbacks):
             cw = model.class_weights.cpu().numpy() * (1 - maps) ** 2 / nc  # class weights
             iw = labels_to_image_weights(dataset.labels, nc=nc, class_weights=cw)  # image weights
             dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
+
+        train_loader.dataset.resample(epoch=epoch) if tlc and RANK != -1 else None
 
         # Update mosaic border (optional)
         # b = int(random.uniform(0.25 * imgsz, 0.75 * imgsz + gs) // gs * gs)
