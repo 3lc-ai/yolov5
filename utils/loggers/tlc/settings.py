@@ -199,7 +199,6 @@ class Settings:
                     f"\n{self._supported_env_vars_str()}"
                 )
 
-    @classmethod
     def _supported_env_vars_str(self, sep: str = "\n  - ") -> str:
         """
         Print all supported environment variables.
