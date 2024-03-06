@@ -10,6 +10,8 @@ from dataclasses import dataclass, field, fields
 from difflib import get_close_matches
 from typing import Any
 
+from tlcconfig import options
+
 from utils.general import LOGGER
 from utils.loggers.tlc.constants import TLC_COLORSTR
 
@@ -177,6 +179,10 @@ class Settings:
         """
         supported_env_vars = [self._field_to_env_var(_field) for _field in fields(Settings)]
         unsupported_env_vars = [var for var in os.environ if var.startswith("TLC_") and var not in supported_env_vars]
+
+        # Do not warn about `tlcconfig` environment variables, as they are not part of the integration settings
+        tlc_env_vars = set(option.envvar for option in options.OPTION.__subclasses__() if option.envvar)
+        unsupported_env_vars = [var for var in unsupported_env_vars if var not in tlc_env_vars]
 
         # Output all environment variables if there are any unsupported ones
         if len(unsupported_env_vars) > 1:
