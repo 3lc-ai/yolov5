@@ -241,7 +241,7 @@ class Settings:
         """
         if var_type == "bool":
             return Settings._parse_boolean_env_var(name, value)
-        elif var_type == "list":
+        elif var_type.startswith("list"):  # TODO: Check type of contained elements, now assumes list of strings
             return value.split(",")
         elif var_type == "int":
             return int(value)
