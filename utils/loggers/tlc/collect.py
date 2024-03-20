@@ -41,6 +41,7 @@ from typing import Any
 
 from models.common import DetectMultiBackend
 from models.yolo import DetectionModel
+
 from utils.callbacks import Callbacks
 from utils.general import LOGGER, check_img_size, increment_path, yaml_save
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -130,7 +131,7 @@ def collect_metrics(opt: argparse.Namespace) -> None:
     if settings.image_embeddings_dim > 0:
         split_to_reduce_by = "val" if "val" in settings.collection_splits else settings.collection_splits[-1]
         table_url_to_reduce_by = tables[split_to_reduce_by].url
-        run.reduce_embeddings_by_example_table_url(
+        run.reduce_embeddings_by_foreign_table_url(
             table_url_to_reduce_by, method=settings.image_embeddings_reducer, n_components=settings.image_embeddings_dim
         )
 
@@ -188,11 +189,11 @@ class TLCCollectionCallback(BaseTLCCallback):
         self._loss_fn = loss_fn
         self._settings = settings
 
-        self.metrics_writer = tlc.MetricsWriter(
+        self.metrics_writer = tlc.MetricsTableWriter(
             run_url=self.run.url,
-            dataset_url=self.table.url,
-            dataset_name=self.table.dataset_name,
-            override_column_schemas=self.metrics_schema,
+            foreign_table_url=self.table.url,
+            foreign_table_display_name=self.table.dataset_name,
+            column_schemas=self.metrics_schema,
         )
 
     def on_val_batch_end(
