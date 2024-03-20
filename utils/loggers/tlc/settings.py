@@ -177,11 +177,11 @@ class Settings:
 
         Appropriate warnings are logged when unsupported environment variables are encountered.
         """
-        supported_env_vars = set(self._field_to_env_var(_field) for _field in fields(Settings))
-        unsupported_env_vars = set(var for var in os.environ if var.startswith("TLC_")) - supported_env_vars
+        supported_env_vars = {self._field_to_env_var(_field) for _field in fields(Settings)}
+        unsupported_env_vars = {var for var in os.environ if var.startswith("TLC_")} - supported_env_vars
 
         # Do not warn about `tlcconfig` environment variables, as they are not part of the integration settings
-        tlc_env_vars = set(option.envvar for option in options.OPTION.__subclasses__() if option.envvar)
+        tlc_env_vars = {option.envvar for option in options.OPTION.__subclasses__() if option.envvar}
         unsupported_env_vars = unsupported_env_vars - tlc_env_vars
 
         # Output all environment variables if there are any unsupported ones
