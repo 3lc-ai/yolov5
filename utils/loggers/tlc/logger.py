@@ -282,10 +282,9 @@ class TLCLogger(BaseTLCCallback):
                 foreign_table_display_name=self.train_table.dataset_name,
                 column_schemas=self.metrics_schema,
             )
+            effective_train_size = self.validation_train_loader.dataset.n
             self.example_ids_for_batch = list(
-                tlc.batched_iterator(
-                    range(len(self.train_table)), batch_size=self._validation_loader_args["batch_size"]
-                )
+                tlc.batched_iterator(range(effective_train_size), batch_size=self._validation_loader_args["batch_size"])
             )
 
             self.example_ids = self.validation_train_loader.dataset.example_ids
@@ -344,8 +343,11 @@ class TLCLogger(BaseTLCCallback):
             foreign_table_display_name=self.val_table.dataset_name,
             column_schemas=self.metrics_schema,
         )
+        effective_validation_size = self.val_loader.dataset.n
         self.example_ids_for_batch = list(
-            tlc.batched_iterator(range(len(self.val_table)), batch_size=self._validation_loader_args["batch_size"])
+            tlc.batched_iterator(
+                range(effective_validation_size), batch_size=self._validation_loader_args["batch_size"]
+            )
         )
 
     def on_val_batch_end(self, batch_i, images, targets, paths, shapes, outputs, train_out) -> None:
