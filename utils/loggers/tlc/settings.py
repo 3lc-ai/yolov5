@@ -10,6 +10,8 @@ from dataclasses import dataclass, field, fields
 from difflib import get_close_matches
 from typing import Any
 
+from tlcconfig import options
+
 from utils.general import LOGGER
 from utils.loggers.tlc.constants import TLC_COLORSTR
 
@@ -175,8 +177,12 @@ class Settings:
 
         Appropriate warnings are logged when unsupported environment variables are encountered.
         """
-        supported_env_vars = [self._field_to_env_var(_field) for _field in fields(Settings)]
-        unsupported_env_vars = [var for var in os.environ if var.startswith("TLC_") and var not in supported_env_vars]
+        supported_env_vars = {self._field_to_env_var(_field) for _field in fields(Settings)}
+        unsupported_env_vars = {var for var in os.environ if var.startswith("TLC_")} - supported_env_vars
+
+        # Do not warn about `tlcconfig` environment variables, as they are not part of the integration settings
+        tlc_env_vars = {option.envvar for option in options.OPTION.__subclasses__() if option.envvar}
+        unsupported_env_vars = unsupported_env_vars - tlc_env_vars
 
         # Output all environment variables if there are any unsupported ones
         if len(unsupported_env_vars) > 1:
@@ -187,15 +193,16 @@ class Settings:
 
         # If there is only one, look for the most similar one
         elif len(unsupported_env_vars) == 1:
-            closest_match = get_close_matches(unsupported_env_vars[0], supported_env_vars, n=1, cutoff=0.4)
-            if closest_match:
+            unsupported_env_var = unsupported_env_vars.pop()
+            close_matches = get_close_matches(unsupported_env_var, supported_env_vars, n=1, cutoff=0.4)
+            if close_matches:
                 LOGGER.warning(
-                    f"{TLC_COLORSTR}Found unsupported environment variable: {unsupported_env_vars[0]}. "
-                    f"Did you mean {closest_match[0]}?"
+                    f"{TLC_COLORSTR}Found unsupported environment variable: {unsupported_env_var}. "
+                    f"Did you mean {close_matches[0]}?"
                 )
             else:
                 LOGGER.warning(
-                    f"{TLC_COLORSTR}Found unsupported environment variable: {unsupported_env_vars[0]}."
+                    f"{TLC_COLORSTR}Found unsupported environment variable: {unsupported_env_var}."
                     f"\n{self._supported_env_vars_str()}"
                 )
 
