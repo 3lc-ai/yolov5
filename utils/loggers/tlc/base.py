@@ -183,7 +183,7 @@ class BaseTLCCallback:
         self.run.add_input_table(input_table)
 
         # Flush the metrics writer and update the Run with the metrics-infos.
-        self.metrics_writer.flush()
+        self.metrics_writer.finalize()
         metrics_infos = self.metrics_writer.get_written_metrics_infos()
 
         self.run.update_metrics(metrics_infos)
