@@ -236,15 +236,17 @@ def get_or_create_tlc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str)
             if_exists="reuse",
             add_weight_column=True,
         )
-        LOGGER.info(f"{TLC_COLORSTR}Using existing {split} table for YAML file {yolo_yaml_file}")
+        latest_table = table.latest()
+
+        if latest_table == table:
+            LOGGER.info(f"{TLC_COLORSTR}Using existing {split} table for YAML file {yolo_yaml_file}: {table.url}")
+        else:
+            LOGGER.info(f"{TLC_COLORSTR}Using latest {split} table from YAML file {yolo_yaml_file}: {latest_table.url}")
+
+        # Always use the latest table for YOLO YAML based tables
+        table = latest_table
 
     table.ensure_fully_defined()
-    # Always get latest when going from YAML file
-    previous_table = table
-    latest_table = table.latest()
-
-    if previous_table.url != latest_table.url:
-        LOGGER.info(f"  Using latest {split} table {table.url} from YAML file {yolo_yaml_file}")
 
     return latest_table
 

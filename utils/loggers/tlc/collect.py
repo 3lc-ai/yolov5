@@ -41,6 +41,7 @@ from typing import Any
 
 from models.common import DetectMultiBackend
 from models.yolo import DetectionModel
+
 from utils.callbacks import Callbacks
 from utils.general import LOGGER, check_img_size, increment_path, yaml_save
 from utils.loggers.tlc.base import BaseTLCCallback
