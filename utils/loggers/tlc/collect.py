@@ -88,7 +88,7 @@ def collect_metrics(opt: argparse.Namespace) -> None:
 
     for split, table in tables.items():
         dataloader = create_dataloader(
-            (TLC_COLLECT_PATH, table, False),
+            (TLC_COLLECT_PATH, table, False, settings.exclude_zero_weight_collection),
             opt.imgsz,
             batch_size=batch_size,
             stride=model.stride,
@@ -97,13 +97,13 @@ def collect_metrics(opt: argparse.Namespace) -> None:
             workers=opt.workers,
         )[0]
 
-        rect_indices = dataloader.dataset.rect_indices
+        example_ids = dataloader.dataset.example_ids
 
         # Create callback to collect metrics and register it
         callbacks = Callbacks()
         loss_fn = ComputeLoss(model) if settings.collect_loss else None
         tlc_callback = TLCCollectionCallback(
-            split, opt, run, table, data_dict, label_mapping, settings, rect_indices=rect_indices, loss_fn=loss_fn
+            split, opt, run, table, data_dict, label_mapping, settings, example_ids=example_ids, loss_fn=loss_fn
         )
         callbacks.register_action("on_val_batch_end", callback=tlc_callback.on_val_batch_end)
         callbacks.register_action("on_val_end", callback=tlc_callback.on_val_end)
@@ -176,7 +176,7 @@ class TLCCollectionCallback(BaseTLCCallback):
         data_dict: dict[str, Any],
         label_mapping: dict[int, int],
         settings: Settings,
-        rect_indices: np.ndarray | None = None,
+        example_ids: list[int] | None = None,
         loss_fn: ComputeLoss | None = None,
     ) -> None:
         self.split = split
@@ -185,7 +185,7 @@ class TLCCollectionCallback(BaseTLCCallback):
         self.table = table
         self.data_dict = data_dict
         self.label_mapping = label_mapping
-        self.rect_indices = rect_indices
+        self.example_ids = example_ids
         self._loss_fn = loss_fn
         self._settings = settings
 

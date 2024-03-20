@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any
 
 import tlc
 import torch
+
 import val as validate
 from models.experimental import attempt_load
-
 from utils.callbacks import Callbacks
 from utils.general import LOGGER
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -103,7 +103,6 @@ class TLCLogger(BaseTLCCallback):
         self._model = None  # Model
         self._ema = None  # Model exponential moving average - used in validation
         self._amp = None  # Whether automatic mixed precision is enabled in training
-        self.rect_indices = None
         self._reached_final_validation = False  # Whether we have reached the final validation
         self._last_validated_epoch = -1  # The last epoch we validated on
 
