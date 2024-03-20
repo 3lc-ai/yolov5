@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any
 
 import tlc
 import torch
-
 import val as validate
 from models.experimental import attempt_load
+
 from utils.callbacks import Callbacks
 from utils.general import LOGGER
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -243,7 +243,7 @@ class TLCLogger(BaseTLCCallback):
         :param results: The final aggregate metrics provided by YOLOv5.
         """
         if self._settings.image_embeddings_dim != 0:
-            self.run.reduce_embeddings_by_example_table_url(
+            self.run.reduce_embeddings_by_foreign_table_url(
                 self.val_table.url,
                 method=self._settings.image_embeddings_reducer,
                 n_components=self._settings.image_embeddings_dim,
@@ -271,11 +271,11 @@ class TLCLogger(BaseTLCCallback):
 
             # Prepare logger for metrics collection
             # Then call validate.run with this logger as a callback (this will clean up the metrics etc.)
-            self.metrics_writer = tlc.MetricsWriter(
+            self.metrics_writer = tlc.MetricsTableWriter(
                 run_url=self.run.url,
-                dataset_url=self.train_table.url,
-                dataset_name=self.train_table.dataset_name,
-                override_column_schemas=self.metrics_schema,
+                foreign_table_url=self.train_table.url,
+                foreign_table_display_name=self.train_table.dataset_name,
+                column_schemas=self.metrics_schema,
             )
             self.example_ids_for_batch = list(
                 tlc.batched_iterator(
@@ -333,11 +333,11 @@ class TLCLogger(BaseTLCCallback):
             self._ema.ema.half()
 
         # Val set validation is called from train.py already, so we let that happen by itself.
-        self.metrics_writer = tlc.MetricsWriter(
+        self.metrics_writer = tlc.MetricsTableWriter(
             run_url=self.run.url,
-            dataset_url=self.val_table.url,
-            dataset_name=self.val_table.dataset_name,
-            override_column_schemas=self.metrics_schema,
+            foreign_table_url=self.val_table.url,
+            foreign_table_display_name=self.val_table.dataset_name,
+            column_schemas=self.metrics_schema,
         )
         self.example_ids_for_batch = list(
             tlc.batched_iterator(range(len(self.val_table)), batch_size=self._validation_loader_args["batch_size"])
