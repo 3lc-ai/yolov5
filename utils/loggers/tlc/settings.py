@@ -193,15 +193,16 @@ class Settings:
 
         # If there is only one, look for the most similar one
         elif len(unsupported_env_vars) == 1:
-            closest_match = get_close_matches(unsupported_env_vars[0], supported_env_vars, n=1, cutoff=0.4)
-            if closest_match:
+            unsupported_env_var = unsupported_env_vars.pop()
+            close_matches = get_close_matches(unsupported_env_var, supported_env_vars, n=1, cutoff=0.4)
+            if close_matches:
                 LOGGER.warning(
-                    f"{TLC_COLORSTR}Found unsupported environment variable: {unsupported_env_vars[0]}. "
-                    f"Did you mean {closest_match[0]}?"
+                    f"{TLC_COLORSTR}Found unsupported environment variable: {unsupported_env_var}. "
+                    f"Did you mean {close_matches[0]}?"
                 )
             else:
                 LOGGER.warning(
-                    f"{TLC_COLORSTR}Found unsupported environment variable: {unsupported_env_vars[0]}."
+                    f"{TLC_COLORSTR}Found unsupported environment variable: {unsupported_env_var}."
                     f"\n{self._supported_env_vars_str()}"
                 )
 
