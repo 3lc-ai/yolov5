@@ -36,7 +36,15 @@ class Settings:
             "description": "Reduction algorithm for image embeddings. Options: pacmap and umap. Only used if IMAGE_EMBEDDINGS_DIM > 0"
         },
     )
-    sampling_weights: bool = field(default=False, metadata={"description": "Whether to use 3LC Sampling Weights"})
+    sampling_weights: bool = field(
+        default=False, metadata={"description": "Whether to use sampling weights in training."}
+    )
+    exclude_zero_weight_training: bool = field(
+        default=False, metadata={"description": "Whether to exclude zero-weighted samples in training."}
+    )
+    exclude_zero_weight_collection: bool = field(
+        default=False, metadata={"description": "Whether to exclude zero-weighted samples in metrics collection."}
+    )
     collect_loss: bool = field(
         default=False, metadata={"description": "Whether to collect loss values during training"}
     )

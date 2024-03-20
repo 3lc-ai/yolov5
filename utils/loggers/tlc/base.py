@@ -81,11 +81,12 @@ class BaseTLCCallback:
 
         # Knowing the batch_i, we know the example ids
         batch_size = images.shape[0]
-        example_ids = list(range(batch_i * batch_size, (batch_i + 1) * batch_size))
+        example_indices = list(range(batch_i * batch_size, (batch_i + 1) * batch_size))
+        example_ids = [self.example_ids[i] for i in example_indices]
 
         # With rect=True, the examples are shuffled!
-        if self.rect_indices is not None:
-            example_ids = [self.rect_indices[i] for i in example_ids]
+        # if self.rect_indices is not None:
+        #    example_ids = [self.rect_indices[i] for i in example_ids]
 
         predictions = []
         for si, pred in enumerate(outputs):

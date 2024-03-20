@@ -178,7 +178,12 @@ class TLCLogger(BaseTLCCallback):
 
         # Create a dataloader for the train set, using the same settings as the validation loader
         validation_train_loader_args = self._validation_loader_args
-        validation_train_loader_args["path"] = (TLC_TRAIN_PATH + "_validate", self.train_table, False)
+        validation_train_loader_args["path"] = (
+            TLC_TRAIN_PATH + "_validate",
+            self.train_table,
+            False,
+            self._settings.exclude_zero_weight_collection,
+        )
         self._validation_train_loader = create_dataloader(**validation_train_loader_args)[0]
 
     def register_val_args(self, **kwargs: Any) -> None:
@@ -283,7 +288,7 @@ class TLCLogger(BaseTLCCallback):
                 )
             )
 
-            self.rect_indices = self.validation_train_loader.dataset.rect_indices
+            self.example_ids = self.validation_train_loader.dataset.example_ids
 
             model = (
                 self._ema.ema
@@ -327,7 +332,7 @@ class TLCLogger(BaseTLCCallback):
         # Then we go ahead with the already started validation (metrics collection) on the val set
         # We then let things run its course.
         self._collecting_on = "val"
-        self.rect_indices = self.val_loader.dataset.rect_indices
+        self.example_ids = self.val_loader.dataset.example_ids
 
         if self._amp:
             self._ema.ema.half()
