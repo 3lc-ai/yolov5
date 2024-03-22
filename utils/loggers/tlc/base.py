@@ -98,7 +98,10 @@ class BaseTLCCallback:
 
         # Knowing the batch_i, we know the example ids
         batch_size = images.shape[0]
-        example_indices = list(range(batch_i * batch_size, (batch_i + 1) * batch_size))
+        example_indices = self.example_ids_for_batch[batch_i]
+
+        assert len(example_indices) == batch_size, "Mismatch in batch size and example indices"
+
         # Map indices to example ids (rect reorder is already handled for these upon dataloader creation)
         example_ids = [self.example_ids[i] for i in example_indices]
 

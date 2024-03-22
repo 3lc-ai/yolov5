@@ -40,7 +40,6 @@ from typing import Any
 
 from models.common import DetectMultiBackend
 from models.yolo import DetectionModel
-
 from utils.callbacks import Callbacks
 from utils.general import LOGGER, check_img_size, increment_path, yaml_save
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -97,6 +96,7 @@ def collect_metrics(opt: argparse.Namespace) -> None:
         )[0]
 
         example_ids = dataloader.dataset.example_ids
+        batch_size = dataloader.batch_size
 
         # Create callback to collect metrics and register it
         callbacks = Callbacks()
@@ -112,6 +112,7 @@ def collect_metrics(opt: argparse.Namespace) -> None:
             example_ids=example_ids,
             loss_fn=loss_fn,
             model=model,
+            batch_size=batch_size,
         )
         callbacks.register_action("on_val_batch_end", callback=tlc_callback.on_val_batch_end)
         callbacks.register_action("on_val_end", callback=tlc_callback.on_val_end)
@@ -187,6 +188,7 @@ class TLCCollectionCallback(BaseTLCCallback):
         example_ids: list[int] | None = None,
         loss_fn: ComputeLoss | None = None,
         model: DetectMultiBackend | None = None,
+        batch_size: int = 1,
     ) -> None:
         self.split = split
         self.opt = opt
@@ -207,6 +209,8 @@ class TLCCollectionCallback(BaseTLCCallback):
             foreign_table_display_name=self.table.dataset_name,
             column_schemas=self.metrics_schema,
         )
+
+        self.example_ids_for_batch = list(tlc.batched_iterator(range(len(self.example_ids)), batch_size=batch_size))
 
     def on_val_batch_end(
         self,
