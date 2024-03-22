@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import tlc
 import torch
-from models.common import DetectMultiBackend
 
+from models.common import DetectMultiBackend
 from utils.general import scale_boxes, xywh2xyxy, xyxy2xywhn
 from utils.loggers.tlc import yolo
 from utils.loggers.tlc.constants import TRAINING_PHASE
@@ -61,6 +61,8 @@ class BaseTLCCallback:
         # The embedding size is the number of channels in the SPPF layer
         detection_model = self._model.model if isinstance(self._model, DetectMultiBackend) else self._model
         sppf_index = next((i for i, m in enumerate(detection_model.model) if "SPPF" in m.type), -1)
+        if sppf_index == -1:
+            raise ValueError("A SPPF layer is required for 3LC YOLOv5 embeddings, but the model does not have one.")
         self._activation_size = detection_model.model[sppf_index + 1]._modules["conv"].in_channels
         return self._activation_size
 
