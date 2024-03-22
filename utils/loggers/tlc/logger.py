@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any
 
 import tlc
 import torch
+
 import val as validate
 from models.experimental import attempt_load
-
 from utils.callbacks import Callbacks
 from utils.general import LOGGER
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -103,7 +103,6 @@ class TLCLogger(BaseTLCCallback):
         self._model = None  # Model
         self._ema = None  # Model exponential moving average - used in validation
         self._amp = None  # Whether automatic mixed precision is enabled in training
-        self.rect_indices = None
         self._reached_final_validation = False  # Whether we have reached the final validation
         self._last_validated_epoch = -1  # The last epoch we validated on
 
@@ -178,7 +177,12 @@ class TLCLogger(BaseTLCCallback):
 
         # Create a dataloader for the train set, using the same settings as the validation loader
         validation_train_loader_args = self._validation_loader_args
-        validation_train_loader_args["path"] = (TLC_TRAIN_PATH + "_validate", self.train_table, False)
+        validation_train_loader_args["path"] = (
+            TLC_TRAIN_PATH + "_validate",
+            self.train_table,
+            False,
+            self._settings.exclude_zero_weight_collection,
+        )
         self._validation_train_loader = create_dataloader(**validation_train_loader_args)[0]
 
     def register_val_args(self, **kwargs: Any) -> None:
@@ -277,13 +281,12 @@ class TLCLogger(BaseTLCCallback):
                 foreign_table_display_name=self.train_table.dataset_name,
                 column_schemas=self.metrics_schema,
             )
+            effective_train_size = self.validation_train_loader.dataset.n
             self.example_ids_for_batch = list(
-                tlc.batched_iterator(
-                    range(len(self.train_table)), batch_size=self._validation_loader_args["batch_size"]
-                )
+                tlc.batched_iterator(range(effective_train_size), batch_size=self._validation_loader_args["batch_size"])
             )
 
-            self.rect_indices = self.validation_train_loader.dataset.rect_indices
+            self.example_ids = self.validation_train_loader.dataset.example_ids
 
             model = (
                 self._ema.ema
@@ -327,7 +330,7 @@ class TLCLogger(BaseTLCCallback):
         # Then we go ahead with the already started validation (metrics collection) on the val set
         # We then let things run its course.
         self._collecting_on = "val"
-        self.rect_indices = self.val_loader.dataset.rect_indices
+        self.example_ids = self.val_loader.dataset.example_ids
 
         if self._amp:
             self._ema.ema.half()
@@ -339,8 +342,11 @@ class TLCLogger(BaseTLCCallback):
             foreign_table_display_name=self.val_table.dataset_name,
             column_schemas=self.metrics_schema,
         )
+        effective_validation_size = self.val_loader.dataset.n
         self.example_ids_for_batch = list(
-            tlc.batched_iterator(range(len(self.val_table)), batch_size=self._validation_loader_args["batch_size"])
+            tlc.batched_iterator(
+                range(effective_validation_size), batch_size=self._validation_loader_args["batch_size"]
+            )
         )
 
     def on_val_batch_end(self, batch_i, images, targets, paths, shapes, outputs, train_out) -> None:
