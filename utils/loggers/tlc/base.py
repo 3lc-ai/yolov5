@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import tlc
 import torch
+from models.common import DetectMultiBackend
 
 from utils.general import scale_boxes, xywh2xyxy, xyxy2xywhn
 from utils.loggers.tlc import yolo
@@ -43,9 +44,25 @@ class BaseTLCCallback:
             schema.update(yolo_loss_schemas(num_classes=self.data_dict["nc"]))
 
         if self._settings.image_embeddings_dim != 0:
-            schema.update(yolo_image_embeddings_schema())
+            schema.update(yolo_image_embeddings_schema(activation_size=self.activation_size()))
 
         return schema
+
+    def activation_size(self):
+        """Get the size of the output of the SPPF layer from the model.
+
+        Infers it from the model the first time it is called.
+
+        :return: The size of the output of the SPPF layer
+        """
+        if self._activation_size:
+            return self._activation_size
+
+        # The embedding size is the number of channels in the SPPF layer
+        detection_model = self._model.model if isinstance(self._model, DetectMultiBackend) else self._model
+        sppf_index = next((i for i, m in enumerate(detection_model.model) if "SPPF" in m.type), -1)
+        self._activation_size = detection_model.model[sppf_index + 1]._modules["conv"].in_channels
+        return self._activation_size
 
     def should_collect_metrics(self) -> bool:
         """
@@ -160,6 +177,9 @@ class BaseTLCCallback:
                 yolo.global_activations
             ), f"Should only have one set of embeddings per batch, was {len(yolo.global_activations)}"
             metrics_batch["embeddings"] = yolo.global_activations.pop()
+            assert (
+                metrics_batch["embeddings"].shape[1] == self._activation_size
+            ), f"Mismatch in embedding size, expected {self._activation_size} got {metrics_batch['embeddings'].shape[1]}"
 
         # Loss
         if self._settings.collect_loss:

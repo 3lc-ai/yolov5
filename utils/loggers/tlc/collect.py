@@ -17,7 +17,6 @@ import os
 import sys
 from pathlib import Path
 
-import numpy as np
 import torch
 
 try:
@@ -103,7 +102,16 @@ def collect_metrics(opt: argparse.Namespace) -> None:
         callbacks = Callbacks()
         loss_fn = ComputeLoss(model) if settings.collect_loss else None
         tlc_callback = TLCCollectionCallback(
-            split, opt, run, table, data_dict, label_mapping, settings, example_ids=example_ids, loss_fn=loss_fn
+            split,
+            opt,
+            run,
+            table,
+            data_dict,
+            label_mapping,
+            settings,
+            example_ids=example_ids,
+            loss_fn=loss_fn,
+            model=model,
         )
         callbacks.register_action("on_val_batch_end", callback=tlc_callback.on_val_batch_end)
         callbacks.register_action("on_val_end", callback=tlc_callback.on_val_end)
@@ -178,6 +186,7 @@ class TLCCollectionCallback(BaseTLCCallback):
         settings: Settings,
         example_ids: list[int] | None = None,
         loss_fn: ComputeLoss | None = None,
+        model: DetectMultiBackend | None = None,
     ) -> None:
         self.split = split
         self.opt = opt
@@ -188,6 +197,9 @@ class TLCCollectionCallback(BaseTLCCallback):
         self.example_ids = example_ids
         self._loss_fn = loss_fn
         self._settings = settings
+        self._model = model
+
+        self._activation_size = None
 
         self.metrics_writer = tlc.MetricsTableWriter(
             run_url=self.run.url,
