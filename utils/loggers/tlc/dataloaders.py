@@ -42,7 +42,7 @@ def tlc_table_row_to_yolo_label(row: dict[str, Any]) -> np.ndarray:
 
 
 def create_dataloader(
-    path: tuple(str, tlc.Table, bool),
+    path: tuple[str, tlc.Table, bool],
     imgsz: int,
     batch_size: int,
     stride: int = 32,
@@ -59,12 +59,12 @@ def create_dataloader(
     prefix: str = "",
     shuffle: bool = False,
     seed: int = 0,
-) -> tuple(DataLoader, LoadImagesAndLabels):
+) -> tuple[DataLoader, LoadImagesAndLabels]:
     if rect and shuffle:
         LOGGER.warning("WARNING ⚠️ --rect is incompatible with DataLoader shuffle, setting shuffle=False")
         shuffle = False
 
-    tlc_path, table, tlc_sampling_weights = path
+    tlc_path, table, tlc_sampling_weights, tlc_exclude_zero_weight = path
 
     if rect and tlc_sampling_weights:
         raise ValueError("--rect is not compatible with 3LC sampling weights.")
@@ -107,6 +107,7 @@ def create_dataloader(
             prefix=TLC_COLORSTR,
             table=table,
             tlc_sampling_weights=tlc_sampling_weights,
+            tlc_exclude_zero_weight=tlc_exclude_zero_weight,
         )
 
     batch_size = min(batch_size, len(dataset))
@@ -170,6 +171,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
         prefix: str = "",
         table: tlc.Table | None = None,
         tlc_sampling_weights: bool = False,
+        tlc_exclude_zero_weight: bool = False,
     ) -> None:
         self.img_size = img_size
         self.augment = augment
@@ -207,31 +209,48 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
         if RANK in {-1, 0}:
             pbar = tlc.track(pbar, description=f"Loading data from 3LC Table {table.url.name}", total=len(table))
 
-        for row in pbar:
+        # Keep track of which example ids are in use (map from index in the yolo dataset to example id)
+        self.example_ids = []
+        num_ignored = 0
+
+        for example_id, row in enumerate(pbar):
             im_file = tlc.Url(row[tlc.IMAGE]).to_absolute().to_str()
+
+            # Fix fixable and discard corrupt images
             fixed, corrupt, msg = fix_image(im_file)
             if msg:
                 msgs.append(msg)
             num_fixed += int(fixed)
             num_corrupt += int(corrupt)
 
-            # Ignore corrupt images when training or validating
-            # Don't ignore when collecting metrics since the dataset length will change
-            if not corrupt or table.collecting_metrics:
+            # Ignore zero weight images if tlc_exclude_zero_weight is set
+            ignore = tlc_exclude_zero_weight and row[tlc.SAMPLE_WEIGHT] == 0.0
+            num_ignored += int(ignore)
+
+            discard = corrupt or ignore
+
+            if not discard:
                 self.sampling_weights.append(row[tlc.SAMPLE_WEIGHT])
                 self.im_files.append(str(Path(im_file)))  # Ensure path is os.sep-delimited
                 self.shapes.append((row[tlc.WIDTH], row[tlc.HEIGHT]))
                 self.labels.append(tlc_table_row_to_yolo_label(row))
+                self.example_ids.append(example_id)
 
         self.shapes = np.array(self.shapes)
+
         self.sampling_weights = np.array(self.sampling_weights)
         self.sampling_weights = self.sampling_weights / np.sum(self.sampling_weights)
 
+        assert len(self.im_files) == len(self.example_ids)
+
         if num_fixed > 0 or num_corrupt > 0:
-            LOGGER.info(f"Fixed {num_fixed} images. Found and ignored {num_corrupt} corrupt images")
+            LOGGER.info(f"  Fixed {num_fixed} images. Found and ignored {num_corrupt} corrupt images")
 
         if len(msgs) > 0:
-            LOGGER.info("\n".join(msgs))
+            LOGGER.info("  " + "\n  ".join(msgs))
+
+        if num_ignored > 0:
+            LOGGER.info(f"  Excluded {num_ignored} images with zero weight")
 
         if len(self.im_files) == 0:
             raise ValueError(
@@ -253,6 +272,8 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
             self.labels = [self.labels[i] for i in include]
             self.segments = [self.segments[i] for i in include]
             self.shapes = self.shapes[include]  # wh
+            self.sampling_weights = self.sampling_weights[include]
+            self.example_ids = [self.example_ids[i] for i in include]
 
         # Create indices
         bi = np.floor(np.arange(n) / batch_size).astype(int)  # batch index
@@ -289,6 +310,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
             self.shapes = s[irect]  # wh
             ar = ar[irect]
             self.sampling_weights = self.sampling_weights[irect]
+            self.example_ids = [self.example_ids[i] for i in irect]
 
             # Set training image shapes
             shapes = [[1, 1]] * nb
