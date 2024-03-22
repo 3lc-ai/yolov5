@@ -341,6 +341,9 @@ class Loggers:
         if self.comet_logger:
             self.comet_logger.on_model_save(last, epoch, final_epoch, best_fitness, fi)
 
+        if self.tlc_logger:
+            TLCLogger.get_instance().on_model_save(last)
+
     def on_train_end(self, last, best, epoch, results):
         """Callback that runs at the end of training to save plots and log results."""
         if self.plots:
