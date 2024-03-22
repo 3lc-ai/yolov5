@@ -9,9 +9,10 @@ from typing import TYPE_CHECKING, Any
 
 import tlc
 import torch
-
 import val as validate
 from models.experimental import attempt_load
+from models.yolo import DetectionModel
+
 from utils.callbacks import Callbacks
 from utils.general import LOGGER
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -235,6 +236,19 @@ class TLCLogger(BaseTLCCallback):
                 "epoch": epoch,
             }
             self.run.add_output_value(val_metrics)
+
+    def on_model_save(self, last: Path) -> None:
+        """We need to strip any 3LC information from the weights so they can be used without
+        3LC later.
+
+        :param last: The path to the last checkpoint.
+        """
+        paths = list(last.parent.glob("*.pt"))
+        for path in paths:
+            ckpt = torch.load(path, map_location="cpu")
+            ckpt["model"].__class__ = DetectionModel
+            ckpt["ema"].__class__ = DetectionModel
+            torch.save(ckpt, path)
 
     def on_train_end(self, results: list[int | float]) -> None:
         """
