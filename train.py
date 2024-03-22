@@ -74,13 +74,13 @@ from utils.general import (
     init_seeds,
     intersect_dicts,
     labels_to_class_weights,
+    labels_to_image_weights,
     methods,
     one_cycle,
     print_args,
     print_mutation,
     strip_optimizer,
     yaml_save,
-    labels_to_image_weights,
 )
 from utils.loggers import LOGGERS, Loggers
 from utils.loggers.comet.comet_utils import check_comet_resume
@@ -462,7 +462,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     "git": GIT_INFO,  # {remote, branch, commit} if a git repo
                     "date": datetime.now().isoformat(),
                 }
-
                 # Save last, best and delete
                 torch.save(ckpt, last)
                 if best_fitness == fi:
