@@ -249,7 +249,7 @@ def get_or_create_tlc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str)
 
     table.ensure_fully_defined()
 
-    return latest_table
+    return table
 
 
 def get_tlc_table_from_url(table_url: tlc.Url, split: str) -> tlc.Table:
