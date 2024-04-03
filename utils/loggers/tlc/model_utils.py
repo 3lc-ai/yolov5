@@ -4,10 +4,12 @@ import os
 from typing import Any
 
 import torch
-
 from models.experimental import attempt_load as yolov5_attempt_load
+from models.yolo import DetectionModel
+
 from utils.general import check_amp as yolov5_check_amp
 from utils.loggers.tlc.logger import TLCLogger
+from utils.loggers.tlc.yolo import TLCDetectionModel
 from utils.torch_utils import ModelEMA as YOLOv5ModelEMA
 
 RANK = int(os.getenv("RANK", -1))
@@ -36,4 +38,6 @@ def attempt_load(*args: Any, **kwargs: Any) -> Any:
     """
     model = yolov5_attempt_load(*args, **kwargs)
     model.collect_embeddings = TLCLogger.get_instance()._settings.image_embeddings_dim > 0
+    if model.collect_embeddings:
+        model._forward_once = TLCDetectionModel._forward_once.__get__(model, DetectionModel)
     return model
