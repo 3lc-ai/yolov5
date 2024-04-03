@@ -105,6 +105,7 @@ class TLCLogger(BaseTLCCallback):
         self._amp = None  # Whether automatic mixed precision is enabled in training
         self._reached_final_validation = False  # Whether we have reached the final validation
         self._last_validated_epoch = -1  # The last epoch we validated on
+        self._activation_size = None  # The size of the activations
 
     def _get_settings(self) -> Settings:
         """Verify that 3LC settings are correct and with required dependencies."""

@@ -17,7 +17,6 @@ import os
 import sys
 from pathlib import Path
 
-import numpy as np
 import torch
 
 try:
@@ -41,7 +40,6 @@ from typing import Any
 
 from models.common import DetectMultiBackend
 from models.yolo import DetectionModel
-
 from utils.callbacks import Callbacks
 from utils.general import LOGGER, check_img_size, increment_path, yaml_save
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -113,6 +111,7 @@ def collect_metrics(opt: argparse.Namespace) -> None:
             settings,
             example_ids=example_ids,
             loss_fn=loss_fn,
+            model=model,
             batch_size=batch_size,
         )
         callbacks.register_action("on_val_batch_end", callback=tlc_callback.on_val_batch_end)
@@ -188,6 +187,7 @@ class TLCCollectionCallback(BaseTLCCallback):
         settings: Settings,
         example_ids: list[int] | None = None,
         loss_fn: ComputeLoss | None = None,
+        model: DetectMultiBackend | None = None,
         batch_size: int = 1,
     ) -> None:
         self.split = split
@@ -199,6 +199,9 @@ class TLCCollectionCallback(BaseTLCCallback):
         self.example_ids = example_ids
         self._loss_fn = loss_fn
         self._settings = settings
+        self._model = model
+
+        self._activation_size = None
 
         self.metrics_writer = tlc.MetricsTableWriter(
             run_url=self.run.url,
