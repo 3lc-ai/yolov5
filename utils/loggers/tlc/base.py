@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import tlc
 import torch
-
 from models.common import DetectMultiBackend
+
 from utils.general import scale_boxes, xywh2xyxy, xyxy2xywhn
 from utils.loggers.tlc import yolo
 from utils.loggers.tlc.constants import TRAINING_PHASE
@@ -310,8 +310,8 @@ class BaseTLCCallback:
             "Split": [int(self.split == "train")] * len(ap_class),
             "Class": ap_class,
             "Targets": [int(t) for t in nt if t > 0],
-            "TPs": tp,
-            "FPs": fp,
+            "TPs": tp.astype("int32"),
+            "FPs": fp.astype("int32"),
             "Precision": p,
             "Recall": r,
             "F1": f1,
