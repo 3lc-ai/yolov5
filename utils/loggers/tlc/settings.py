@@ -248,8 +248,10 @@ class Settings:
         """
         if var_type == "bool":
             return Settings._parse_boolean_env_var(name, value)
-        elif var_type == "list":
-            return value.split(",")
+        elif var_type.startswith("list"):
+            elements_type = var_type.split("[")[1].split("]")[0]
+            values = [element for element in value.split(",") if element]
+            return [Settings._parse_env_var(f"{name}_{i}", element, elements_type) for i, element in enumerate(values)]
         elif var_type == "int":
             return int(value)
         elif var_type == "float":
