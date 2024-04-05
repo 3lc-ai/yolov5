@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any
 
 import tlc
 import torch
-
 import val as validate
-from models.experimental import attempt_load
+from models.yolo import DetectionModel
+
 from utils.callbacks import Callbacks
 from utils.general import LOGGER
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -236,6 +236,19 @@ class TLCLogger(BaseTLCCallback):
             }
             self.run.add_output_value(val_metrics)
 
+    def on_model_save(self, last: Path) -> None:
+        """We need to strip any 3LC information from the weights so they can be used without
+        3LC later.
+
+        :param last: The path to the last checkpoint.
+        """
+        paths = list(last.parent.glob("*.pt"))
+        for path in paths:
+            ckpt = torch.load(path, map_location="cpu")
+            ckpt["model"].__class__ = DetectionModel
+            ckpt["ema"].__class__ = DetectionModel
+            torch.save(ckpt, path)
+
     def on_train_end(self, results: list[int | float]) -> None:
         """
         Reduce any embeddings and write final per-class metrics to the run before closing.
@@ -285,11 +298,13 @@ class TLCLogger(BaseTLCCallback):
 
             self.rect_indices = self.validation_train_loader.dataset.rect_indices
 
-            model = (
-                self._ema.ema
-                if not self._reached_final_validation
-                else attempt_load(self._best_path, next(self._ema.ema.parameters()).device).half()
-            )
+            if not self._reached_final_validation:
+                model = self._ema.ema
+            else:
+                from utils.loggers.tlc.model_utils import attempt_load
+
+                model = attempt_load(self._best_path, next(self._ema.ema.parameters()).device).half()
+
             model.collect_embeddings = self._settings.image_embeddings_dim > 0 and self.should_collect_metrics()
 
             LOGGER.info(TLC_COLORSTR + "Collecting metrics on train and val sets:")
