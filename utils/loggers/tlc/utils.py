@@ -1,5 +1,6 @@
 # YOLOv5 🚀 AGPL-3.0 license
 """3LC utils."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -356,10 +357,15 @@ def tlc_check_dataset(data_file: str, get_splits: tuple | list = ("train", "val"
     """
     # Regular YAML file
     if not data_file.startswith(TLC_PREFIX):
-        check_dataset(data_file)  # Download, etc.
-
         if not (data_file_url := tlc.Url(data_file)).exists():
             raise FileNotFoundError(f"Could not find YAML file {data_file_url}")
+
+        try:
+            check_dataset(data_file)  # Download, etc.
+        except AssertionError as e:
+            raise AssertionError(
+                "YOLOv5 dataset check failed. If you are using a 3LC YAML file, remember the 3LC:// prefix."
+            ) from e
 
         data_file_content = yaml.safe_load(data_file_url.read())
         splits = [
