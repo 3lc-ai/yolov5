@@ -40,6 +40,7 @@ from typing import Any
 
 from models.common import DetectMultiBackend
 from models.yolo import DetectionModel
+
 from utils.callbacks import Callbacks
 from utils.general import LOGGER, check_img_size, increment_path, yaml_save
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -83,6 +84,7 @@ def collect_metrics(opt: argparse.Namespace) -> None:
     parameters["weights"] = str(parameters["weights"])
     parameters["project"] = str(parameters["project"])
     run.set_parameters(parameters=parameters)
+    run.set_status_collecting()
 
     for split, table in tables.items():
         dataloader = create_dataloader(

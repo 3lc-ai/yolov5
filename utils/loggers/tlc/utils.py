@@ -209,6 +209,7 @@ def get_or_create_tlc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str)
     dataset_name = dataset_name_base + "-" + split
     project_name = "yolov5-" + dataset_name_base
 
+    yolo_yaml_name = Path(yolo_yaml_file).name
     yolo_yaml_file = str(Path(yolo_yaml_file).resolve())  # Ensure absolute path for resolving Table Url
 
     try:
@@ -221,6 +222,7 @@ def get_or_create_tlc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str)
             project_name=project_name,
             if_exists="raise",
             add_weight_column=True,
+            description=f"Created with YOLOv5 integration from {yolo_yaml_name}",
         )
         table.write_to_row_cache(create_url_if_empty=True)  # Always cache for YOLO tables
         LOGGER.info(f"{TLC_COLORSTR}Created {split} table {table.url} from YAML file {yolo_yaml_file}")
@@ -236,6 +238,7 @@ def get_or_create_tlc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str)
             project_name=project_name,
             if_exists="reuse",
             add_weight_column=True,
+            description=f"Created with YOLOv5 integration from {yolo_yaml_name}",
         )
         latest_table = table.latest()
 
