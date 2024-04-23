@@ -263,7 +263,7 @@ class Loggers:
         if self.clearml:
             self.clearml.log_image_with_boxes(path, pred, names, im)
 
-    def on_val_batch_end(self, batch_i, im, targets, paths, shapes, out):
+    def on_val_batch_end(self, batch_i, im, targets, paths, shapes, out, train_out):
         """Logs validation batch results to Comet ML during training at the end of each validation batch."""
         if self.comet_logger:
             self.comet_logger.on_val_batch_end(batch_i, im, targets, paths, shapes, out)
