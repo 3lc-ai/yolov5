@@ -338,10 +338,13 @@ class TLCLogger(BaseTLCCallback):
         # When we get here with _collecting_on set to train, we are in the call to validate.run from
         # TLCLogger.on_val_start, and we don't want to do anything here.
         if self._collecting_on == "train":
+            self.run.set_status_collecting()
             return
 
         # Collect metrics on train set if enabled
         self._collect_on_train()
+
+        self.run.set_status_collecting()
 
         # Then we go ahead with the already started validation (metrics collection) on the val set
         # We then let things run its course.
@@ -386,3 +389,5 @@ class TLCLogger(BaseTLCCallback):
         if batch_i == len(self.example_ids_for_batch) - 1:
             input_table = self.train_table if self._collecting_on == "train" else self.val_table
             self.flush_metrics_writer(input_table=input_table)
+
+            self.run.set_status_running()

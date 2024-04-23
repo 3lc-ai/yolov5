@@ -14,7 +14,10 @@ This document outlines how to use the 3LC integration available for YOLOv5.
 
 ## Getting Started
 
-The integration is automatically enabled if `tlc` is installed in your environment.
+The integration is automatically enabled if the `3lc` package is installed in your environment. It can be installed with 
+```
+pip install 3lc
+```
 
 ### First Time
 
@@ -30,7 +33,7 @@ For later runs, in order to specify that you would like to continue working with
 
 You can keep using the same YAML file pointed to by `--data`. As long as this file does not change, the integration will resolve to the same 3LC tables and always get the latest revision for each split. The specific revisions used are logged to the console, and a line is printed stating that a 3LC YAML is printed with instructions on how to use it.
 
-The integration uses a hash of the YAML file name and content to resolve to the relevant tables if they exist. Therefore, if any changes are made to the original YAML file, this reference to the tables is lost (and new tables are instead created).
+The integration uses the YAML file name to resolve to the relevant tables if they exist. Therefore, if any changes are made to the original YAML file name, this reference to the tables is lost (and new tables are instead created).
 
 #### 3LC YAML File
 
@@ -122,10 +125,6 @@ This assumes there exists a 3LC YAML located at `my/tlc/dataset.yaml`.
 ### Image Embeddings
 
 Image embeddings can be collected by setting `TLC_IMAGE_EMBEDDINGS_DIM` to 2 or 3, and are based on the output of the spatial pooling function output from the YOLOv5 architectures. Similar images, as seen by the model, tend to be close to each other in this space. In the 3LC Dashboard these embeddings can be visualized, allowing you to find similar images, find imbalances in your dataset and determine if your validation set is representative of your training data (and vice-versa).
-
-These are the image embeddings for YOLOv5x on the full COCO train and val splits, where each point corresponds to an image in the dataset.
-
-[<img src="static/embeddings.jpg" width="250"/>](static/embeddings.jpg)
 
 ### Loss
 
