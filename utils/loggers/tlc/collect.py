@@ -26,7 +26,7 @@ try:
 
     check_tlc_version()
 except ImportError:
-    raise ImportError("Install 3LC with `pip install tlc` to collect metrics.")
+    raise ImportError("Install 3LC with `pip install 3lc` to collect metrics.")
 
 import val as validate
 

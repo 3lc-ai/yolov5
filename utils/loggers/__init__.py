@@ -121,7 +121,7 @@ class Loggers:
 
         if not tlc:
             prefix = colorstr("3LC: ")
-            s = f"{prefix}run 'pip install tlc' to track YOLOv5 🚀 runs to debug and improve your dataset in 3LC"
+            s = f"{prefix}run 'pip install 3lc' to track YOLOv5 🚀 runs to debug and improve your dataset in 3LC"
             self.logger.info(s)
 
         # TensorBoard
