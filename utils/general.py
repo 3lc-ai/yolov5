@@ -499,7 +499,7 @@ def check_file(file, suffix=""):
         try:
             import tlc  # noqa: F401
         except ImportError:
-            raise ValueError('tlc is not installed, so cannot use 3LC dataset. Try running "pip install tlc".')
+            raise ValueError('3lc is not installed, so cannot use 3LC dataset. Try running "pip install 3lc".')
         return file
     else:  # search
         files = []
