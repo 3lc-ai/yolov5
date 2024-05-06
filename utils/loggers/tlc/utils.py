@@ -224,7 +224,7 @@ def get_or_create_tlc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str)
             add_weight_column=True,
             description=f"Created with YOLOv5 integration from {yolo_yaml_name}",
         )
-        table.write_to_row_cache(create_url_if_empty=True)  # Always cache for YOLO tables
+        table.write_to_row_cache(create_url_if_empty=True, overwrite_if_exists=False)  # Always cache for YOLO tables
         LOGGER.info(f"{TLC_COLORSTR}Created {split} table {table.url} from YAML file {yolo_yaml_file}")
 
     except FileExistsError:
