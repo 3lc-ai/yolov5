@@ -33,7 +33,7 @@ class Settings:
         },
     )
     image_embeddings_reducer: str = field(
-        default="umap",
+        default="pacmap",
         metadata={
             "description": "Reduction algorithm for image embeddings. Options: pacmap and umap. Only used if IMAGE_EMBEDDINGS_DIM > 0"
         },
