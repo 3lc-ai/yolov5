@@ -10,7 +10,7 @@ This document outlines how to use the 3LC integration available for YOLOv5.
 
 3LC is free for non-commercial use.
 
-<img src="https://docs.3lc.ai/3lc/2.2/_images/run_assign1.jpg">
+<img src="https://docs.3lc.ai/3lc/latest/_images/2_hardhat_run1.PNG">
 
 ## Getting Started
 
