@@ -25,6 +25,7 @@ from utils.loggers.tlc.utils import (
     get_names_from_yolo_table,
 )
 from utils.loss import ComputeLoss
+from tlc.client.utils import batched_iterator
 
 if TYPE_CHECKING:
     from utils.loggers.tlc.model_utils import ModelEMA
@@ -297,7 +298,7 @@ class TLCLogger(BaseTLCCallback):
             )
             effective_train_size = self.validation_train_loader.dataset.n
             self.example_ids_for_batch = list(
-                tlc.batched_iterator(range(effective_train_size), batch_size=self._validation_loader_args["batch_size"])
+                batched_iterator(range(effective_train_size), batch_size=self._validation_loader_args["batch_size"])
             )
 
             self.example_ids = self.validation_train_loader.dataset.example_ids
@@ -363,7 +364,7 @@ class TLCLogger(BaseTLCCallback):
         )
         effective_validation_size = self.val_loader.dataset.n
         self.example_ids_for_batch = list(
-            tlc.batched_iterator(
+            batched_iterator(
                 range(effective_validation_size), batch_size=self._validation_loader_args["batch_size"]
             )
         )

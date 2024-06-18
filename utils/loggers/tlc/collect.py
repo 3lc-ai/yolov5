@@ -51,7 +51,7 @@ from utils.loggers.tlc.utils import get_names_from_yolo_table, tlc_check_dataset
 from utils.loggers.tlc.yolo import TLCDetectionModel
 from utils.loss import ComputeLoss
 from utils.torch_utils import select_device
-
+from tlc.client.utils import batched_iterator
 
 def collect_metrics(opt: argparse.Namespace) -> None:
     """
@@ -212,7 +212,7 @@ class TLCCollectionCallback(BaseTLCCallback):
             column_schemas=self.metrics_schema,
         )
 
-        self.example_ids_for_batch = list(tlc.batched_iterator(range(len(self.example_ids)), batch_size=batch_size))
+        self.example_ids_for_batch = list(batched_iterator(range(len(self.example_ids)), batch_size=batch_size))
 
     def on_val_batch_end(
         self,

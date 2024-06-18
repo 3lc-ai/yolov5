@@ -15,6 +15,7 @@ import torch
 from PIL import Image, ImageOps
 from torch.utils.data import DataLoader, distributed
 from tqdm import tqdm
+from tlc.core.utils.progress import track
 
 from utils.augmentations import Albumentations
 from utils.dataloaders import InfiniteDataLoader, LoadImagesAndLabels, img2label_paths, seed_worker
@@ -207,7 +208,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
 
         pbar = iter(table.table_rows)
         if RANK in {-1, 0}:
-            pbar = tlc.track(pbar, description=f"Loading data from 3LC Table {table.url.name}", total=len(table))
+            pbar = track(pbar, description=f"Loading data from 3LC Table {table.url.name}", total=len(table))
 
         # Keep track of which example ids are in use (map from index in the yolo dataset to example id)
         self.example_ids = []
