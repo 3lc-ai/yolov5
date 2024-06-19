@@ -1,4 +1,4 @@
-# YOLOv5 🚀 by Ultralytics, AGPL-3.0 license
+# Ultralytics YOLOv5 🚀, AGPL-3.0 license
 """
 Train a YOLOv5 classifier model on a classification dataset.
 
@@ -178,7 +178,9 @@ def train(opt, device):
     # Scheduler
     lrf = 0.01  # final lr (fraction of lr0)
     # lf = lambda x: ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - lrf) + lrf  # cosine
-    lf = lambda x: (1 - x / epochs) * (1 - lrf) + lrf  # linear
+    def lf(x):
+        return (1 - x / epochs) * (1 - lrf) + lrf  # linear
+
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
     # scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=lr0, total_steps=epochs, pct_start=0.1,
     #                                    final_div_factor=1 / 25 / lrf)
