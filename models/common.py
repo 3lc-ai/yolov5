@@ -444,7 +444,7 @@ class DetectMultiBackend(nn.Module):
         #   ONNX Runtime:                   *.onnx
         #   ONNX OpenCV DNN:                *.onnx --dnn
         #   OpenVINO:                       *_openvino_model
-        #   CoreML:                         *.mlmodel
+        #   CoreML:                         *.mlpackage
         #   TensorRT:                       *.engine
         #   TensorFlow SavedModel:          *_saved_model
         #   TensorFlow GraphDef:            *.pb
@@ -1066,6 +1066,9 @@ class Classify(nn.Module):
     def __init__(
         self, c1, c2, k=1, s=1, p=None, g=1, dropout_p=0.0
     ):  # ch_in, ch_out, kernel, stride, padding, groups, dropout probability
+        """Initializes YOLOv5 classification head with convolution, pooling, and dropout layers for input to output
+        channel transformation.
+        """
         super().__init__()
         c_ = 1280  # efficientnet_b0 size
         self.conv = Conv(c1, c_, k, s, autopad(k, p), g)
