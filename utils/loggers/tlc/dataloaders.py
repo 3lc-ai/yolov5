@@ -208,7 +208,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
 
         pbar = iter(table.table_rows)
         if RANK in {-1, 0}:
-            pbar = track(pbar, description=f"Loading data from 3LC Table {table.url.name}", total=len(table))
+            pbar = track(pbar, description=f"Loading data from 3LC Table {table.dataset_name}/{table.url.name}", total=len(table))
 
         # Keep track of which example ids are in use (map from index in the yolo dataset to example id)
         self.example_ids = []
