@@ -4,7 +4,6 @@
 import tlc
 from packaging import version
 
-from utils.general import LOGGER, colorstr
 from utils.loggers.tlc.constants import TLC_VERSION_REQUIRED
 
 def check_tlc_version() -> None:
@@ -16,7 +15,9 @@ def check_tlc_version() -> None:
     installed_version = version.parse(tlc.__version__)
 
     if installed_version < required_version:
-        prefix = colorstr("red", "WARNING: ")
-        LOGGER.warn(f"{prefix}You are using 3lc version {installed_version}, "
-                    f"but the integration is intended for {required_version} or higher. "
-                    "Please upgrade 3lc if you run into problems.")
+        installed_str = ".".join(str(part) for part in installed_version.release[:3])
+        raise ValueError(
+            f"You are using 3lc=={installed_str}. "
+            f"This version of the integration is intended for 3lc>={required_version}. "
+            "Please upgrade 3lc with `pip install --upgrade 3lc`."
+        )

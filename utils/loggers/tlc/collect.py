@@ -21,10 +21,6 @@ import torch
 
 try:
     import tlc
-
-    from utils.loggers.tlc.version import check_tlc_version
-
-    check_tlc_version()
 except ImportError:
     raise ImportError("Install 3LC with `pip install 3lc` to collect metrics.")
 
