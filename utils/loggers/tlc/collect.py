@@ -208,7 +208,6 @@ class TLCCollectionCallback(BaseTLCCallback):
         self.metrics_writer = tlc.MetricsTableWriter(
             run_url=self.run.url,
             foreign_table_url=self.table.url,
-            foreign_table_display_name=self.table.dataset_name,
             column_schemas=self.metrics_schema,
         )
 

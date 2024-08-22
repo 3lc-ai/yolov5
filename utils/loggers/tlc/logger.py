@@ -293,7 +293,6 @@ class TLCLogger(BaseTLCCallback):
             self.metrics_writer = tlc.MetricsTableWriter(
                 run_url=self.run.url,
                 foreign_table_url=self.train_table.url,
-                foreign_table_display_name=self.train_table.dataset_name,
                 column_schemas=self.metrics_schema,
             )
             effective_train_size = self.validation_train_loader.dataset.n
@@ -359,7 +358,6 @@ class TLCLogger(BaseTLCCallback):
         self.metrics_writer = tlc.MetricsTableWriter(
             run_url=self.run.url,
             foreign_table_url=self.val_table.url,
-            foreign_table_display_name=self.val_table.dataset_name,
             column_schemas=self.metrics_schema,
         )
         effective_validation_size = self.val_loader.dataset.n
