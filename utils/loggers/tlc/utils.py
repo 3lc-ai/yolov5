@@ -442,3 +442,12 @@ def get_names_from_yolo_table(table: tlc.Table, value_path: str = "bbs.bb_list.l
     """
     value_map = table.get_value_map(value_path)
     return {int(k): v["internal_name"] for k, v in value_map.items()}
+
+def verify_model_table_compatible(model, table: tlc.Table) -> None:
+    table_names = get_names_from_yolo_table(table)
+
+    # Check that the model and table have the same number of classes
+    assert len(model.names) == len(table_names), "The selected model was trained on a different number of classes than the table. Please select a model with the same number of classes as the table."
+
+    # Check that the model and table have the same exact classes
+    assert model.names == table_names, "The selected model was trained on different classes than the table. Please select a model with the same classes as the table."

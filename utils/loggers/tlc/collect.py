@@ -43,7 +43,7 @@ from utils.loggers.tlc.base import BaseTLCCallback
 from utils.loggers.tlc.constants import TLC_COLLECT_PATH, TLC_COLORSTR
 from utils.loggers.tlc.dataloaders import create_dataloader
 from utils.loggers.tlc.settings import Settings
-from utils.loggers.tlc.utils import get_names_from_yolo_table, tlc_check_dataset
+from utils.loggers.tlc.utils import get_names_from_yolo_table, tlc_check_dataset, verify_model_table_compatible
 from utils.loggers.tlc.yolo import TLCDetectionModel
 from utils.loss import ComputeLoss
 from utils.torch_utils import select_device
@@ -83,6 +83,8 @@ def collect_metrics(opt: argparse.Namespace) -> None:
     run.set_status_collecting()
 
     for split, table in tables.items():
+        verify_model_table_compatible(model, table)
+
         dataloader = create_dataloader(
             (TLC_COLLECT_PATH, table, False, settings.exclude_zero_weight_collection),
             opt.imgsz,
