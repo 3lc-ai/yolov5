@@ -261,6 +261,9 @@ class TLCLogger(BaseTLCCallback):
         :param results: The final aggregate metrics provided by YOLOv5.
         """
         if self._settings.image_embeddings_dim != 0:
+            LOGGER.info(
+            f"{TLC_COLORSTR}Reducing embeddings to {self._settings.image_embeddings_dim}D with {self._settings.image_embeddings_reducer}, this may take some time..."
+        )
             self.run.reduce_embeddings_by_foreign_table_url(
                 self.val_table.url,
                 method=self._settings.image_embeddings_reducer,

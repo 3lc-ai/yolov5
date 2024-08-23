@@ -138,6 +138,10 @@ def collect_metrics(opt: argparse.Namespace) -> None:
     if settings.image_embeddings_dim > 0:
         split_to_reduce_by = "val" if "val" in settings.collection_splits else settings.collection_splits[-1]
         table_url_to_reduce_by = tables[split_to_reduce_by].url
+
+        LOGGER.info(
+            f"{TLC_COLORSTR}Reducing embeddings to {settings.image_embeddings_dim}D with {settings.image_embeddings_reducer}, this may take some time..."
+        )
         run.reduce_embeddings_by_foreign_table_url(
             table_url_to_reduce_by, method=settings.image_embeddings_reducer, n_components=settings.image_embeddings_dim
         )
