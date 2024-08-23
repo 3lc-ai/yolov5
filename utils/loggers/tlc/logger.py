@@ -192,18 +192,17 @@ class TLCLogger(BaseTLCCallback):
         self._validation_loader_args = kwargs
 
     def on_train_start(self) -> None:
-        if not self._settings.collection_disable:
-            # Create a 3LC run and log run parameters
-            self.run = tlc.init(project_name=self.train_table.project_name)
+        # Create a 3LC run and log run parameters
+        self.run = tlc.init(project_name=self.train_table.project_name)
 
-            parameters = {k: v for k, v in vars(self.opt).items() if k != "hyp"}
-            parameters["evolve_population"] = str(parameters["evolve_population"])
-            parameters.update(self.hyp)
-            self.run.set_parameters(parameters=parameters)
+        parameters = {k: v for k, v in vars(self.opt).items() if k != "hyp"}
+        parameters["evolve_population"] = str(parameters["evolve_population"])
+        parameters.update(self.hyp)
+        self.run.set_parameters(parameters=parameters)
 
-            self._model.hyp = self.hyp  # Required for losses
-            self._unreduced_loss_fn = TLCComputeLoss(self._model)
-            self._loss_fn = ComputeLoss(self._model)
+        self._model.hyp = self.hyp  # Required for losses
+        self._unreduced_loss_fn = TLCComputeLoss(self._model)
+        self._loss_fn = ComputeLoss(self._model)
 
         # Print 3LC information
         tlc_mc_string = create_tlc_info_string_before_training(
@@ -262,6 +261,9 @@ class TLCLogger(BaseTLCCallback):
         :param results: The final aggregate metrics provided by YOLOv5.
         """
         if self._settings.image_embeddings_dim != 0:
+            LOGGER.info(
+            f"{TLC_COLORSTR}Reducing embeddings to {self._settings.image_embeddings_dim}D with {self._settings.image_embeddings_reducer}, this may take some time..."
+        )
             self.run.reduce_embeddings_by_foreign_table_url(
                 self.val_table.url,
                 method=self._settings.image_embeddings_reducer,
@@ -293,7 +295,6 @@ class TLCLogger(BaseTLCCallback):
             self.metrics_writer = tlc.MetricsTableWriter(
                 run_url=self.run.url,
                 foreign_table_url=self.train_table.url,
-                foreign_table_display_name=self.train_table.dataset_name,
                 column_schemas=self.metrics_schema,
             )
             effective_train_size = self.validation_train_loader.dataset.n
@@ -359,7 +360,6 @@ class TLCLogger(BaseTLCCallback):
         self.metrics_writer = tlc.MetricsTableWriter(
             run_url=self.run.url,
             foreign_table_url=self.val_table.url,
-            foreign_table_display_name=self.val_table.dataset_name,
             column_schemas=self.metrics_schema,
         )
         effective_validation_size = self.val_loader.dataset.n

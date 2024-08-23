@@ -194,16 +194,15 @@ def create_tlc_info_string_before_training(metrics_collection_epochs: list[int],
     return tlc_mc_string
 
 
-def get_or_create_tlc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str) -> tlc.Table:
+def get_or_create_3lc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str, override_split_path: str) -> tlc.Table:
     """
     Get or create a 3LC table from a YOLO YAML file.
 
     :param yolo_yaml_file: The path to the YOLO YAML file.
     :param split: The split to get the table for.
+    :param override_split_path: The path to override the split path in the YAML file.
     :returns: The 3LC table.
     """
-    tlc.TableIndexingTable.instance().ensure_fully_defined()
-
     # Resolving logic for YOLO YAML file
     dataset_name_base = Path(yolo_yaml_file).stem
     dataset_name = dataset_name_base + "-" + split
@@ -212,12 +211,27 @@ def get_or_create_tlc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str)
     yolo_yaml_name = Path(yolo_yaml_file).name
     yolo_yaml_file = str(Path(yolo_yaml_file).resolve())  # Ensure absolute path for resolving Table Url
 
+    # Previously the table name was the split name and now it is "initial", so we need to check for backwards compatibility
+    table_url_backcompatible = tlc.Table._resolve_table_url(
+        table_url=None,
+        root_url=None,
+        project_name=project_name,
+        dataset_name=dataset_name,
+        table_name=split,
+    )
+
+    if table_url_backcompatible.exists():
+        table_name = split
+    else:
+        table_name = "initial"
+    
     try:
         table = tlc.Table.from_yolo(
             dataset_yaml_file=yolo_yaml_file,
             split=split,
+            override_split_path=override_split_path,
             structure=None,
-            table_name=split,
+            table_name=table_name,
             dataset_name=dataset_name,
             project_name=project_name,
             if_exists="raise",
@@ -232,8 +246,9 @@ def get_or_create_tlc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str)
         table = tlc.Table.from_yolo(
             dataset_yaml_file=yolo_yaml_file,
             split=split,
+            override_split_path=override_split_path,
             structure=None,
-            table_name=split,
+            table_name=table_name,
             dataset_name=dataset_name,
             project_name=project_name,
             if_exists="reuse",
@@ -249,8 +264,6 @@ def get_or_create_tlc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str)
 
         # Always use the latest table for YOLO YAML based tables
         table = latest_table
-
-    table.ensure_fully_defined()
 
     return table
 
@@ -290,27 +303,27 @@ def check_table_compatibility(table: tlc.Table) -> bool:
     """
 
     row_schema = table.row_schema.values
-    assert tlc.IMAGE in row_schema
-    assert tlc.WIDTH in row_schema
-    assert tlc.HEIGHT in row_schema
-    assert tlc.BOUNDING_BOXES in row_schema
-    assert tlc.BOUNDING_BOX_LIST in row_schema[tlc.BOUNDING_BOXES].values
-    assert tlc.SAMPLE_WEIGHT in row_schema
-    assert tlc.LABEL in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values
-    assert tlc.X0 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values
-    assert tlc.Y0 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values
-    assert tlc.X1 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values
-    assert tlc.Y1 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values
+    assert tlc.IMAGE in row_schema, f"Table does not contain an image column {tlc.IMAGE}"
+    assert tlc.WIDTH in row_schema, f"Table does not contain a width column {tlc.WIDTH}"
+    assert tlc.HEIGHT in row_schema, f"Table does not contain a height column {tlc.HEIGHT}"
+    assert tlc.BOUNDING_BOXES in row_schema, "Table does not contain a bounding box column"
+    assert tlc.BOUNDING_BOX_LIST in row_schema[tlc.BOUNDING_BOXES].values, "Bounding box column does not contain a bounding box list"
+    assert tlc.SAMPLE_WEIGHT in row_schema, f"Table does not contain a sample weight column {tlc.SAMPLE_WEIGHT}"
+    assert tlc.LABEL in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain a label {tlc.LABEL}"
+    assert tlc.X0 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain a center x named {tlc.X0}"
+    assert tlc.Y0 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain a center y named {tlc.Y0}"
+    assert tlc.X1 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain width {tlc.X1}"
+    assert tlc.Y1 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain height {tlc.Y1}"
 
     X0 = row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values[tlc.X0]
     Y0 = row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values[tlc.Y0]
     X1 = row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values[tlc.X1]
     Y1 = row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values[tlc.Y1]
 
-    assert X0.value.number_role == tlc.NUMBER_ROLE_BB_CENTER_X
-    assert Y0.value.number_role == tlc.NUMBER_ROLE_BB_CENTER_Y
-    assert X1.value.number_role == tlc.NUMBER_ROLE_BB_SIZE_X
-    assert Y1.value.number_role == tlc.NUMBER_ROLE_BB_SIZE_Y
+    assert X0.value.number_role == tlc.NUMBER_ROLE_BB_CENTER_X, f"{tlc.X0} has number role {X0.value.number_role}, expected {tlc.NUMBER_ROLE_BB_CENTER_X}"
+    assert Y0.value.number_role == tlc.NUMBER_ROLE_BB_CENTER_Y, f"{tlc.Y0} has number role {Y0.value.number_role}, expected {tlc.NUMBER_ROLE_BB_CENTER_Y}"
+    assert X1.value.number_role == tlc.NUMBER_ROLE_BB_SIZE_X, f"{tlc.X1} has number role {X1.value.number_role}, expected {tlc.NUMBER_ROLE_BB_SIZE_X}"
+    assert Y1.value.number_role == tlc.NUMBER_ROLE_BB_SIZE_Y, f"{tlc.Y1} has number role {Y1.value.number_role}, expected {tlc.NUMBER_ROLE_BB_SIZE_Y}"
 
     return True
 
@@ -330,20 +343,14 @@ def write_3lc_yaml(data_file: str, tables: dict[str, tlc.Table]) -> None:
         )
         return
 
-    # Common path for train, val, test tables:
-    #                                        v           <--          <--          *
-    # projects / yolov5-<dataset_name> / datasets / <dataset_name> / tables / <table_url> / files
-    path = tables["train"].url.parent.parent.parent
-
     # Get relative paths for each table to write to YAML file
-    split_paths = {split: str(tlc.Url.relative_from(tables[split].url, path).apply_aliases()) for split in tables}
+    split_paths = {split: str(tables[split].url.apply_aliases()) for split in tables}
 
     # Add :latest to each
     split_paths_latest = {split: f"{path}:latest" for split, path in split_paths.items()}
 
     # Create 3LC yaml file
-    data_config = {"path": str(path), **split_paths_latest}
-    new_yaml_url.write(yaml.dump(data_config, sort_keys=False, encoding="utf-8"))
+    new_yaml_url.write(yaml.dump(split_paths_latest, sort_keys=False, encoding="utf-8"))
 
     LOGGER.info(
         f"{TLC_COLORSTR}Created 3LC YAML file: {str(new_yaml_url)}. To use this file,"
@@ -366,19 +373,17 @@ def tlc_check_dataset(data_file: str, get_splits: tuple | list = ("train", "val"
             raise FileNotFoundError(f"Could not find YAML file {data_file_url}")
 
         try:
-            check_dataset(data_file)  # Download, etc.
+            data_dict = check_dataset(data_file)  # Download, etc.
         except AssertionError as e:
             raise AssertionError(
                 "YOLOv5 dataset check failed. If you are using a 3LC YAML file, remember the 3LC:// prefix."
             ) from e
 
-        data_file_content = yaml.safe_load(data_file_url.read())
-        splits = [
-            key for key in data_file_content if key not in ("path", "names", "download") and data_file_content[key]
-        ]
-
-        # Create 3LC tables, get root table if already registered
-        tables = {split: get_or_create_tlc_table_from_yolo(data_file, split=split) for split in splits}
+        # data_file_content = yaml.safe_load(data_file_url.read())
+        tables = {}
+        for key in ("train", "val", "test"):
+            if key in data_dict and data_dict[key]:
+                tables[key] = get_or_create_3lc_table_from_yolo(data_file, split=key, override_split_path=data_dict[key])
 
         # Write all tables to the 3LC YAML file
         write_3lc_yaml(data_file, tables)
@@ -402,11 +407,12 @@ def tlc_check_dataset(data_file: str, get_splits: tuple | list = ("train", "val"
             if split not in get_splits:
                 continue
 
-            split_path = data_config[split].split(":")[0]
-            latest = data_config[split].endswith(":latest")
+            split_path = data_config[split]
+            latest = split_path.endswith(":latest")
 
-            if split_path.count(":") > 1:
-                raise ValueError(f"Found more than one : in the split path {split_path} for split {split}")
+            if latest:
+                split_path = data_config[split][:-7]
+
             url = tlc.Url(path) / split_path if path else tlc.Url(split_path)
 
             table = get_tlc_table_from_url(table_url=url, split=split)

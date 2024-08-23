@@ -115,7 +115,8 @@ class Settings:
             "pacmap",
             "umap",
         ), f"Invalid image embeddings reducer {self.image_embeddings_reducer}."
-        self._check_reducer_available()
+        if self.image_embeddings_dim > 0: # Only check reducer if embeddings are enabled
+            self._check_reducer_available()
 
         # Train / collect specific settings
         self._verify_training(opt) if training else self._verify_collection()

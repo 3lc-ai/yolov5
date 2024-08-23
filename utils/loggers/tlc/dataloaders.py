@@ -43,7 +43,7 @@ def tlc_table_row_to_yolo_label(row: dict[str, Any]) -> np.ndarray:
 
 
 def create_dataloader(
-    path: tuple[str, tlc.Table, bool],
+    path: tuple[str, tlc.Table, bool, bool],
     imgsz: int,
     batch_size: int,
     stride: int = 32,
@@ -61,6 +61,11 @@ def create_dataloader(
     shuffle: bool = False,
     seed: int = 0,
 ) -> tuple[DataLoader, LoadImagesAndLabels]:
+    """ Create dataloader in the 3LC integration. In addition to the standard behavior, this function also
+    handles 3LC-specific arguments (zero weight exclusion and sampling weights), logging and reading of 
+    other properties required by the 3LC integration logger.
+    
+    """
     if rect and shuffle:
         LOGGER.warning("WARNING ⚠️ --rect is incompatible with DataLoader shuffle, setting shuffle=False")
         shuffle = False
@@ -208,7 +213,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
 
         pbar = iter(table.table_rows)
         if RANK in {-1, 0}:
-            pbar = track(pbar, description=f"Loading data from 3LC Table {table.url.name}", total=len(table))
+            pbar = track(pbar, description=f"Loading data from 3LC Table {table.dataset_name}/{table.url.name}", total=len(table))
 
         # Keep track of which example ids are in use (map from index in the yolo dataset to example id)
         self.example_ids = []

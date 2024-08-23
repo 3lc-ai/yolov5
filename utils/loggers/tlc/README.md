@@ -37,11 +37,11 @@ The integration uses the YAML file name to resolve to the relevant tables if the
 
 #### 3LC YAML File
 
-For more flexibility and to explicitly select which tables to use, you can use a 3LC YAML file, like the one written during your first run. It should contain keys for the relevant splits (`train` and `val` in most cases), with values set to the 3LC Urls of the corresponding tables. Once your 3LC YAML is populated with these it will look like the following example:
+For more flexibility and to explicitly select which tables to use, you can use a 3LC YAML file, like the one written during your first run. It should contain keys for the relevant splits (`train` and `val` in most cases), with values set to the 3LC Urls of the corresponding tables. Any 3LC Url is supported, which means that tables on S3 can be used as well. Once your 3LC YAML is populated with these it will look like the following example:
 
 ```yaml
-train: my_train_table
-val: my_val_table
+train: path/to/my_train_table  # On disk
+val: s3://path/to/my_val_table # On s3
 ```
 
 In order to train on different revisions, simply change the paths in the file to your desired revision.
@@ -49,8 +49,8 @@ In order to train on different revisions, simply change the paths in the file to
 If you would like to train on the latest revisions, you can add `:latest` to one or both of the paths, and 3LC will find the `Table`s for the latest revision in the same lineage. For the above example, with latest on both, the 3LC YAML would look like this:
 
 ```yaml
-train: my_train_table:latest
-val: my_val_table:latest
+train: path/to/my_train_table:latest
+val: s3://path/to/my_val_table:latest
 ```
 
 ______________________________________________________________________
@@ -80,7 +80,7 @@ val: my_val_table
 Specifying to use the latest revisions instead can be done by adding `:latest` to one or both of these `Url`s:
 
 ```yaml
-train: my_train_table:latest # resolves to the latest revision of my_train_table, which is Edited1BoundingBoxes
+train: my_train_table:latest # resolves to the latest revision of my_train_table, which is Edited2BoundingBoxes
 val: my_val_table:latest # resolves to the latest revision of my_val_table, which is my_val_table
 ```
 
@@ -88,7 +88,7 @@ val: my_val_table:latest # resolves to the latest revision of my_val_table, whic
 
 ### Metrics Collection Only
 
-In some cases it is useful to collect metrics without doing any training, such as when pretrained weights already exist. This is possible by calling `val.py --task collect`.
+In some cases it is useful to collect metrics without doing any training, such as when pretrained weights already exist. This is possible by calling `val.py --task collect`. Provide any other arguments that you would normally use with `val.py` such as those for batch size, image size etc.
 
 ## 3LC Settings
 
@@ -124,11 +124,11 @@ This assumes there exists a 3LC YAML located at `my/tlc/dataset.yaml`.
 
 ### Image Embeddings
 
-Image embeddings can be collected by setting `TLC_IMAGE_EMBEDDINGS_DIM` to 2 or 3, and are based on the output of the spatial pooling function output from the YOLOv5 architectures. Similar images, as seen by the model, tend to be close to each other in this space. In the 3LC Dashboard these embeddings can be visualized, allowing you to find similar images, find imbalances in your dataset and determine if your validation set is representative of your training data (and vice-versa).
+Image embeddings can be collected by setting `TLC_IMAGE_EMBEDDINGS_DIM` to 2 or 3, and are based on the output of the spatial pooling function output from the YOLOv5 architectures. Similar images, as seen by the model, tend to be close to each other in this space. In the 3LC Dashboard these embeddings can be visualized, allowing you to find similar images, imbalances in your dataset and determine if your validation set is representative of your training data (and vice-versa).
 
 ### Loss
 
-Loss can be collected during calls to `train.py` with `TLC_COLLECT_LOSS`. The output is the three (in the single-class case there are only two, since the classification loss is always zero) loss components computed in YOLOv5. These are useful to determine which images are challenging or easy for the model in terms of the three different loss types. The aggregate loss can be computed in the 3LC Dashboard.
+Loss can be collected during calls to `train.py` with `TLC_COLLECT_LOSS`. The output is the three (in the single-class case there are only two, since the classification loss is always zero) loss components for the image, as computed by YOLOv5. These are useful to determine which images are challenging or easy for the model in terms of the three different loss types. The aggregate loss can be computed in the 3LC Dashboard by taking the sum of the three columns.
 
 ## Other output
 

@@ -1,5 +1,6 @@
 from utils.loggers.tlc.version import check_tlc_version
 
+# Check that at least the minimum required 3lc version is installed before proceeding
 check_tlc_version()
 
 from utils.loggers.tlc.collect import collect_metrics
