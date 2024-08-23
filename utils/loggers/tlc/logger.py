@@ -192,18 +192,17 @@ class TLCLogger(BaseTLCCallback):
         self._validation_loader_args = kwargs
 
     def on_train_start(self) -> None:
-        if not self._settings.collection_disable:
-            # Create a 3LC run and log run parameters
-            self.run = tlc.init(project_name=self.train_table.project_name)
+        # Create a 3LC run and log run parameters
+        self.run = tlc.init(project_name=self.train_table.project_name)
 
-            parameters = {k: v for k, v in vars(self.opt).items() if k != "hyp"}
-            parameters["evolve_population"] = str(parameters["evolve_population"])
-            parameters.update(self.hyp)
-            self.run.set_parameters(parameters=parameters)
+        parameters = {k: v for k, v in vars(self.opt).items() if k != "hyp"}
+        parameters["evolve_population"] = str(parameters["evolve_population"])
+        parameters.update(self.hyp)
+        self.run.set_parameters(parameters=parameters)
 
-            self._model.hyp = self.hyp  # Required for losses
-            self._unreduced_loss_fn = TLCComputeLoss(self._model)
-            self._loss_fn = ComputeLoss(self._model)
+        self._model.hyp = self.hyp  # Required for losses
+        self._unreduced_loss_fn = TLCComputeLoss(self._model)
+        self._loss_fn = ComputeLoss(self._model)
 
         # Print 3LC information
         tlc_mc_string = create_tlc_info_string_before_training(
