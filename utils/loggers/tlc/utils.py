@@ -211,14 +211,27 @@ def get_or_create_3lc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str,
     yolo_yaml_name = Path(yolo_yaml_file).name
     yolo_yaml_file = str(Path(yolo_yaml_file).resolve())  # Ensure absolute path for resolving Table Url
 
-    # TODO: Add backcompat check - check if table with project name, dataset name and table_name=split exists, if so, use it.
+    # Previously the table name was the split name and now it is "initial", so we need to check for backwards compatibility
+    table_url_backcompatible = tlc.Table._resolve_table_url(
+        table_url=None,
+        root_url=None,
+        project_name=project_name,
+        dataset_name=dataset_name,
+        table_name=split,
+    )
+
+    if table_url_backcompatible.exists():
+        table_name = split
+    else:
+        table_name = "initial"
+    
     try:
         table = tlc.Table.from_yolo(
             dataset_yaml_file=yolo_yaml_file,
             split=split,
             override_split_path=override_split_path,
             structure=None,
-            table_name="initial",
+            table_name=table_name,
             dataset_name=dataset_name,
             project_name=project_name,
             if_exists="raise",
@@ -235,7 +248,7 @@ def get_or_create_3lc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str,
             split=split,
             override_split_path=override_split_path,
             structure=None,
-            table_name="initial",
+            table_name=table_name,
             dataset_name=dataset_name,
             project_name=project_name,
             if_exists="reuse",
