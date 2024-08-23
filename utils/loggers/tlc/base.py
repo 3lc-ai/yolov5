@@ -211,6 +211,13 @@ class BaseTLCCallback:
 
         self.run.update_metrics(metrics_infos)
 
+        # Remove metrics tables from 3lc object cache
+        for metrics_info in metrics_infos:
+            tlc.ObjectRegistry._delete_object_from_caches(
+                tlc.Url(metrics_info["url"]).to_absolute(self.run.url)
+            )
+
+
     def compute_loss(self, train_out: torch.Tensor, targets: torch.Tensor) -> dict[str, torch.Tensor]:
         """
         Compute loss for the batch.
