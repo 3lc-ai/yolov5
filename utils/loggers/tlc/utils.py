@@ -289,29 +289,28 @@ def check_table_compatibility(table: tlc.Table) -> bool:
     :returns: True if the Table is compatible, False otherwise.
     """
 
-    # TODO: Improve assertion messages
     row_schema = table.row_schema.values
     assert tlc.IMAGE in row_schema, f"Table does not contain an image column {tlc.IMAGE}"
     assert tlc.WIDTH in row_schema, f"Table does not contain a width column {tlc.WIDTH}"
     assert tlc.HEIGHT in row_schema, f"Table does not contain a height column {tlc.HEIGHT}"
     assert tlc.BOUNDING_BOXES in row_schema, "Table does not contain a bounding box column"
-    assert tlc.BOUNDING_BOX_LIST in row_schema[tlc.BOUNDING_BOXES].values, "Bounding box column does not contain a "
-    assert tlc.SAMPLE_WEIGHT in row_schema
-    assert tlc.LABEL in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values
-    assert tlc.X0 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values
-    assert tlc.Y0 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values
-    assert tlc.X1 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values
-    assert tlc.Y1 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values
+    assert tlc.BOUNDING_BOX_LIST in row_schema[tlc.BOUNDING_BOXES].values, "Bounding box column does not contain a bounding box list"
+    assert tlc.SAMPLE_WEIGHT in row_schema, f"Table does not contain a sample weight column {tlc.SAMPLE_WEIGHT}"
+    assert tlc.LABEL in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain a label {tlc.LABEL}"
+    assert tlc.X0 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain a center x named {tlc.X0}"
+    assert tlc.Y0 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain a center y named {tlc.Y0}"
+    assert tlc.X1 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain width {tlc.X1}"
+    assert tlc.Y1 in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain height {tlc.Y1}"
 
     X0 = row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values[tlc.X0]
     Y0 = row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values[tlc.Y0]
     X1 = row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values[tlc.X1]
     Y1 = row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values[tlc.Y1]
 
-    assert X0.value.number_role == tlc.NUMBER_ROLE_BB_CENTER_X
-    assert Y0.value.number_role == tlc.NUMBER_ROLE_BB_CENTER_Y
-    assert X1.value.number_role == tlc.NUMBER_ROLE_BB_SIZE_X
-    assert Y1.value.number_role == tlc.NUMBER_ROLE_BB_SIZE_Y
+    assert X0.value.number_role == tlc.NUMBER_ROLE_BB_CENTER_X, f"{tlc.X0} has number role {X0.value.number_role}, expected {tlc.NUMBER_ROLE_BB_CENTER_X}"
+    assert Y0.value.number_role == tlc.NUMBER_ROLE_BB_CENTER_Y, f"{tlc.Y0} has number role {Y0.value.number_role}, expected {tlc.NUMBER_ROLE_BB_CENTER_Y}"
+    assert X1.value.number_role == tlc.NUMBER_ROLE_BB_SIZE_X, f"{tlc.X1} has number role {X1.value.number_role}, expected {tlc.NUMBER_ROLE_BB_SIZE_X}"
+    assert Y1.value.number_role == tlc.NUMBER_ROLE_BB_SIZE_Y, f"{tlc.Y1} has number role {Y1.value.number_role}, expected {tlc.NUMBER_ROLE_BB_SIZE_Y}"
 
     return True
 
