@@ -1,4 +1,4 @@
-# Ultralytics YOLOv5 🚀, AGPL-3.0 license
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 """Callback utils."""
 
 import threading
@@ -64,7 +64,6 @@ class Callbacks:
             thread: (boolean) Run callbacks in daemon thread
             kwargs: Keyword Arguments to receive from YOLOv5
         """
-
         assert hook in self._callbacks, f"hook '{hook}' not found in callbacks {self._callbacks}"
         for logger in self._callbacks[hook]:
             if thread:
