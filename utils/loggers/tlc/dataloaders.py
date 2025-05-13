@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import tlc
@@ -16,6 +16,7 @@ from PIL import Image, ImageOps
 from torch.utils.data import DataLoader, distributed
 from tqdm import tqdm
 from tlc.core.utils.progress import track
+from tlc.core.builtins.types.bounding_box import CenteredXYWHBoundingBox
 
 from utils.augmentations import Albumentations
 from utils.dataloaders import InfiniteDataLoader, LoadImagesAndLabels, img2label_paths, seed_worker
@@ -30,12 +31,16 @@ RANK = int(os.getenv("RANK", -1))
 PIN_MEMORY = str(os.getenv("PIN_MEMORY", True)).lower() == "true"  # global pin_memory for dataloaders
 
 
-def unpack_box(bbox: dict[str, Any]) -> list[int | float]:
-    return [bbox[tlc.LABEL], bbox[tlc.X0], bbox[tlc.Y0], bbox[tlc.X1], bbox[tlc.Y1]]
+def unpack_box(bbox: dict[str, Any], bounding_box_factory: Callable[..., tlc.BoundingBox], image_width: int, image_height: int) -> list[int | float]:
+    coordinates = [bbox[tlc.X0], bbox[tlc.Y0], bbox[tlc.X1], bbox[tlc.Y1]]
+
+    xywh_coordinates = CenteredXYWHBoundingBox.from_top_left_xywh(bounding_box_factory(coordinates).to_top_left_xywh().normalize(image_width, image_height))
+
+    return [bbox[tlc.LABEL], *xywh_coordinates]
 
 
-def tlc_table_row_to_yolo_label(row: dict[str, Any]) -> np.ndarray:
-    unpacked = [unpack_box(box) for box in row[tlc.BOUNDING_BOXES][tlc.BOUNDING_BOX_LIST]]
+def tlc_table_row_to_yolo_label(row: dict[str, Any], bounding_box_factory: Callable[..., tlc.BoundingBox], image_width: int, image_height: int) -> np.ndarray:
+    unpacked = [unpack_box(box, bounding_box_factory, image_width, image_height) for box in row[tlc.BOUNDING_BOXES][tlc.BOUNDING_BOX_LIST]]
     arr = np.array(unpacked, ndmin=2, dtype=np.float32)
     if len(unpacked) == 0:
         arr = arr.reshape(0, 5)
@@ -219,6 +224,11 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
         self.example_ids = []
         num_ignored = 0
 
+        try:
+            bounding_box_factory = tlc.BoundingBox.from_schema(table.rows_schema[tlc.BOUNDING_BOXES][tlc.BOUNDING_BOX_LIST])
+        except Exception as e:
+            raise ValueError(f"Error inferring bounding box format for {table.dataset_name}.") from e
+
         for example_id, row in enumerate(pbar):
             im_file = tlc.Url(row[tlc.IMAGE]).to_absolute().to_str()
 
@@ -239,7 +249,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
                 self.sampling_weights.append(row[tlc.SAMPLE_WEIGHT])
                 self.im_files.append(str(Path(im_file)))  # Ensure path is os.sep-delimited
                 self.shapes.append((row[tlc.WIDTH], row[tlc.HEIGHT]))
-                self.labels.append(tlc_table_row_to_yolo_label(row))
+                self.labels.append(tlc_table_row_to_yolo_label(row, bounding_box_factory, row[tlc.WIDTH], row[tlc.HEIGHT]))
                 self.example_ids.append(example_id)
 
         self.shapes = np.array(self.shapes)
