@@ -225,7 +225,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
         num_ignored = 0
 
         try:
-            bounding_box_factory = tlc.BoundingBox.from_schema(table.rows_schema[tlc.BOUNDING_BOXES][tlc.BOUNDING_BOX_LIST])
+            bounding_box_factory = tlc.BoundingBox.from_schema(table.rows_schema.values[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST])
         except Exception as e:
             raise ValueError(f"Error inferring bounding box format for {table.dataset_name}.") from e
 
