@@ -193,6 +193,10 @@ class Settings:
         tlc_env_vars = {option.envvar for option in options.OPTION.__subclasses__() if option.envvar}
         unsupported_env_vars = unsupported_env_vars - tlc_env_vars
 
+        # Do not warn about TLC_ALIAS_* environment variables
+        tlc_alias_env_vars = {var for var in os.environ if var.startswith("TLC_ALIAS_")}
+        unsupported_env_vars = unsupported_env_vars - tlc_alias_env_vars
+
         # Output all environment variables if there are any unsupported ones
         if len(unsupported_env_vars) > 1:
             LOGGER.warning(
