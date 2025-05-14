@@ -30,11 +30,24 @@ LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable
 RANK = int(os.getenv("RANK", -1))
 PIN_MEMORY = str(os.getenv("PIN_MEMORY", True)).lower() == "true"  # global pin_memory for dataloaders
 
+def convert_to_xywh(bbox: tlc.BoundingBox, image_width: int, image_height: int) -> CenteredXYWHBoundingBox:
+    """Convert a bounding box to xc, yc, w, h, normalized to [0, 1].
+    
+    :param bbox: The 3LC bounding box to convert.
+    :param image_width: The width of the image.
+    :param image_height: The height of the image.
+    :return: The bounding box converted to xc, yc, w, h.
+    """
+    if isinstance(bbox, CenteredXYWHBoundingBox) and bbox.normalized:
+        return bbox
+    else:
+        return CenteredXYWHBoundingBox.from_top_left_xywh(bbox.to_top_left_xywh().normalize(image_width, image_height))
+
 
 def unpack_box(bbox: dict[str, Any], bounding_box_factory: Callable[..., tlc.BoundingBox], image_width: int, image_height: int) -> list[int | float]:
     coordinates = [bbox[tlc.X0], bbox[tlc.Y0], bbox[tlc.X1], bbox[tlc.Y1]]
 
-    xywh_coordinates = CenteredXYWHBoundingBox.from_top_left_xywh(bounding_box_factory(coordinates).to_top_left_xywh().normalize(image_width, image_height))
+    xywh_coordinates = convert_to_xywh(bounding_box_factory(coordinates), image_width, image_height)
 
     return [bbox[tlc.LABEL], *xywh_coordinates]
 
