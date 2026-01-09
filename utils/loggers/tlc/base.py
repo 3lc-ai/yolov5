@@ -195,7 +195,7 @@ class BaseTLCCallback:
             loss_metrics = self.compute_loss(train_out, targets)
             metrics_batch.update(loss_metrics)
 
-        self.metrics_writer.add_batch(metrics_batch=metrics_batch)
+        self.metrics_writer.add_batch(metrics_batch)
 
     def flush_metrics_writer(self, input_table: tlc.Table) -> None:
         """
