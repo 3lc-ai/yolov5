@@ -25,6 +25,9 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          # This repo has no uv.lock (not a uv project), which is the
+          # default cache-key glob and a hard error when absent.
+          cache-dependency-glob: requirements*.txt
       - name: ruff check
         run: uvx ruff check
       # `ruff format --check` and `ty check` will be added in a follow-up PR
@@ -40,6 +43,9 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          # This repo has no uv.lock (not a uv project), which is the
+          # default cache-key glob and a hard error when absent.
+          cache-dependency-glob: requirements*.txt
       - name: pytest
         # Once real integration tests land in a follow-up PR, install 3lc here.
         # `-o addopts=` overrides upstream's broken [tool.pytest] block in
