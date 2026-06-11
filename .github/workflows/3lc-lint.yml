@@ -35,12 +35,14 @@ jobs:
         # environment, so type-checking needs the full requirements. torch is
         # installed first from the CPU index so the CUDA wheels (several GB)
         # are never pulled onto the runner; the requirements installs then see
-        # torch as already satisfied. torch<2.6 because torch 2.6 flipped
-        # torch.load to weights_only=True, which upstream YOLOv5 fixed after
-        # this fork's merge-base — drop the bound after the next upstream sync.
+        # torch as already satisfied.
+        #
+        # The torch<2.6 / numpy<2 pins mirror 3lc-tests.yml (upstream-YOLOv5
+        # lag; drop after the next upstream sync) and keep the type-checked
+        # environment identical to the tested one.
         run: |
           uv venv
           uv pip install "torch<2.6" "torchvision<0.21" --index-url https://download.pytorch.org/whl/cpu
-          uv pip install -r requirements.txt -r requirements-dev.txt --index-strategy unsafe-best-match
+          uv pip install -r requirements.txt -r requirements-dev.txt "numpy<2" --index-strategy unsafe-best-match
       - name: ty check
         run: .venv/bin/ty check

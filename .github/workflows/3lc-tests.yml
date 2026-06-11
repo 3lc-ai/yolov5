@@ -32,14 +32,16 @@ jobs:
       - name: Install dependencies
         # torch is installed first from the CPU index so the CUDA wheels
         # (several GB) are never pulled onto the runner; the requirements
-        # installs then see torch as already satisfied. torch<2.6 because
-        # torch 2.6 flipped torch.load to weights_only=True, which upstream
-        # YOLOv5 fixed after this fork's merge-base — drop the bound after
-        # the next upstream sync.
+        # installs then see torch as already satisfied.
+        #
+        # Pins that paper over upstream-YOLOv5 lag — drop both after the next
+        # upstream sync: torch<2.6 (torch 2.6 flipped torch.load to
+        # weights_only=True) and numpy<2 (numpy 2.0 removed np.trapz, still
+        # used by utils/metrics.py at this fork's merge-base).
         run: |
           uv venv
           uv pip install "torch<2.6" "torchvision<0.21" --index-url https://download.pytorch.org/whl/cpu
-          uv pip install -r requirements.txt -r requirements-dev.txt --index-strategy unsafe-best-match
+          uv pip install -r requirements.txt -r requirements-dev.txt "numpy<2" --index-strategy unsafe-best-match
       - name: pytest
         # `-o addopts=` overrides upstream's broken [tool.pytest] block in
         # pyproject.toml (it uses a string instead of a list, which newer

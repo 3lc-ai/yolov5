@@ -26,7 +26,7 @@ Clone the `develop` branch of this fork and install the YOLOv5 requirements alon
 ```bash
 git clone -b develop https://github.com/3lc-ai/yolov5.git
 cd yolov5
-pip install -r requirements.txt "torch<2.6"  # torch<2.6 until the next upstream sync (torch 2.6 changed torch.load defaults)
+pip install -r requirements.txt "torch<2.6" "numpy<2"  # torch/numpy bounds needed until the next upstream sync
 pip install 3lc 3lc-ultralytics --extra-index-url https://pypi.3lc.ai/public/repositories/releases-public
 ```
 
