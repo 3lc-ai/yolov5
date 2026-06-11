@@ -42,17 +42,17 @@ ty check
 pytest -o "addopts=" tests/  # -o sidesteps upstream's broken [tool.pytest] block in pyproject.toml
 ```
 
-The end-to-end tests in `tests/` are skipped unless `TLC_API_KEY` is set to a
-valid 3LC API key.
+The end-to-end tests in `tests/` require a valid 3LC API key — locally the
+one from your 3LC configuration is used; in CI the `TLC_API_KEY` repository
+secret provides it. They fail (not skip) without one.
 
 ## CI
 
-`.github/workflows/3lc-ci.yml` runs on PRs and pushes to `develop`:
+Two workflows run on PRs and pushes to `develop`:
 
-- **lint**: `ruff check` and `ruff format --check` (no dependencies needed).
-- **tests**: installs the full requirements (including `3lc` and
-  `3lc-ultralytics`), then runs `ty check` and `pytest`. The end-to-end tests
-  need the `TLC_API_KEY` repository secret.
+- **`3lc-lint.yml`**: `ruff check`, `ruff format --check` and `ty check`
+  (ty needs the full requirements installed to resolve third-party imports).
+- **`3lc-tests.yml`**: installs the full requirements and runs `pytest`.
 
 Upstream's `ci-testing.yml` continues to fire on `master` and is not touched
 here.

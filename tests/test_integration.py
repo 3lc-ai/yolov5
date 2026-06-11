@@ -1,8 +1,9 @@
 """End-to-end tests for the 3LC YOLOv5 integration.
 
 These tests run the real train.py / val.py entry points on coco128 with the 3LC
-integration active. They require a valid `TLC_API_KEY` (provided as a repository
-secret in CI) and are skipped when it is not set.
+integration active. They require a valid 3LC API key — the `TLC_API_KEY`
+repository secret in CI, or the local 3LC configuration when run locally — and
+fail without one.
 """
 
 from __future__ import annotations
@@ -15,11 +16,6 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("TLC_API_KEY"),
-    reason="End-to-end 3LC tests require a valid TLC_API_KEY",
-)
 
 
 @pytest.fixture(scope="session")
