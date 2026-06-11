@@ -30,13 +30,11 @@ jobs:
           cache-dependency-glob: requirements*.txt
       - name: ruff check
         run: uvx ruff check
-      # `ruff format --check` and `ty check` will be added in a follow-up PR
-      # alongside the integration code refactor. ty surfaces ~10 pre-existing
-      # return-type and overload issues in the current tlc code; fixing them
-      # belongs with the catch-up work, not with scaffolding.
+      - name: ruff format
+        run: uvx ruff format --check utils/loggers/tlc/ tests/
 
   tests:
-    name: pytest
+    name: ty & pytest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,10 +44,24 @@ jobs:
           # This repo has no uv.lock (not a uv project), which is the
           # default cache-key glob and a hard error when absent.
           cache-dependency-glob: requirements*.txt
+      - name: Install dependencies
+        # torch is installed first from the CPU index so the CUDA wheels
+        # (several GB) are never pulled onto the runner; the requirements
+        # installs then see torch as already satisfied. torch<2.6 because
+        # torch 2.6 flipped torch.load to weights_only=True, which upstream
+        # YOLOv5 fixed after this fork's merge-base — drop the bound after
+        # the next upstream sync.
+        run: |
+          uv venv
+          uv pip install "torch<2.6" "torchvision<0.21" --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -r requirements.txt -r requirements-dev.txt --index-strategy unsafe-best-match
+      - name: ty check
+        run: .venv/bin/ty check
       - name: pytest
-        # Once real integration tests land in a follow-up PR, install 3lc here.
         # `-o addopts=` overrides upstream's broken [tool.pytest] block in
         # pyproject.toml (it uses a string instead of a list, which newer
         # pytest rejects). We don't touch pyproject.toml to fix it because
         # that file is upstream-owned.
-        run: uvx pytest -o "addopts=" tests/
+        run: .venv/bin/pytest -o "addopts=" tests/
+        env:
+          TLC_API_KEY: ${{ secrets.TLC_API_KEY }}

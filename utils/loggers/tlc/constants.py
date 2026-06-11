@@ -9,7 +9,8 @@ TLC_COLORSTR = colorstr("3LC: ")
 TLC_TRAIN_PATH = "3lc_train"
 TLC_VAL_PATH = "3lc_val"
 TLC_COLLECT_PATH = "3lc_collect"
-TLC_VERSION_REQUIRED = "2.7.1"
+TLC_VERSION_REQUIRED = "3.0.0"
+TLC_ULTRALYTICS_VERSION_REQUIRED = "0.3.0"
 
 # Column names
 TRAINING_PHASE = "Training Phase"

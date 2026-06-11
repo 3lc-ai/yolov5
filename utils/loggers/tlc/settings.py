@@ -6,11 +6,12 @@ from __future__ import annotations
 import argparse
 import importlib
 import os
-from dataclasses import dataclass, field, fields
+from dataclasses import Field, dataclass, field, fields
 from difflib import get_close_matches
 from typing import Any
 
-from tlcconfig import options
+# tlcconfig ships no type stubs, so ty cannot resolve its members
+from tlcconfig.options import OptionRegistry  # ty: ignore[unresolved-import]
 
 from utils.general import LOGGER
 from utils.loggers.tlc.constants import TLC_COLORSTR
@@ -115,7 +116,7 @@ class Settings:
             "pacmap",
             "umap",
         ), f"Invalid image embeddings reducer {self.image_embeddings_reducer}."
-        if self.image_embeddings_dim > 0: # Only check reducer if embeddings are enabled
+        if self.image_embeddings_dim > 0:  # Only check reducer if embeddings are enabled
             self._check_reducer_available()
 
         # Train / collect specific settings
@@ -141,9 +142,9 @@ class Settings:
 
         # Collection epoch settings
         assert self.collection_epoch_start >= -1, f"Invalid collection start epoch {self.collection_epoch_start}."
-        assert (
-            self.collection_epoch_interval > 0
-        ), f"Invalid collection epoch interval {self.collection_epoch_interval}."
+        assert self.collection_epoch_interval > 0, (
+            f"Invalid collection epoch interval {self.collection_epoch_interval}."
+        )
 
         # --noval and disabled collection
         assert not (opt.noval and self.collection_disable), "Cannot use --noval and disable collection."
@@ -171,7 +172,7 @@ class Settings:
             )
 
     @staticmethod
-    def _field_to_env_var(_field: field) -> None:
+    def _field_to_env_var(_field: Field[Any]) -> str:
         """
         Return the environment variable name for a given field.
 
@@ -189,19 +190,28 @@ class Settings:
         supported_env_vars = {self._field_to_env_var(_field) for _field in fields(Settings)}
         unsupported_env_vars = {var for var in os.environ if var.startswith("TLC_")} - supported_env_vars
 
-        # Do not warn about `tlcconfig` environment variables, as they are not part of the integration settings
-        tlc_env_vars = {option.envvar for option in options.OPTION.__subclasses__() if option.envvar}
-        unsupported_env_vars = unsupported_env_vars - tlc_env_vars
+        # Do not warn about `tlcconfig` environment variables, as they are not part of the integration settings.
+        # An option's envvar is either a string or a compiled pattern (e.g. for TLC_ALIAS_*).
+        tlc_env_vars = set()
+        tlc_env_var_patterns = []
+        for option in OptionRegistry.all().values():
+            for envvar in (option.envvar, *option.envvar_aliases):
+                if isinstance(envvar, str):
+                    tlc_env_vars.add(envvar)
+                elif envvar is not None:
+                    tlc_env_var_patterns.append(envvar)
 
-        # Do not warn about TLC_ALIAS_* environment variables
-        tlc_alias_env_vars = {var for var in os.environ if var.startswith("TLC_ALIAS_")}
-        unsupported_env_vars = unsupported_env_vars - tlc_alias_env_vars
+        unsupported_env_vars = {
+            var
+            for var in unsupported_env_vars
+            if var not in tlc_env_vars and not any(pattern.fullmatch(var) for pattern in tlc_env_var_patterns)
+        }
 
         # Output all environment variables if there are any unsupported ones
         if len(unsupported_env_vars) > 1:
             LOGGER.warning(
-                f'{TLC_COLORSTR}Found unsupported environment variables: '
-                f'{", ".join(unsupported_env_vars)}.\n{self._supported_env_vars_str()}'
+                f"{TLC_COLORSTR}Found unsupported environment variables: "
+                f"{', '.join(unsupported_env_vars)}.\n{self._supported_env_vars_str()}"
             )
 
         # If there is only one, look for the most similar one
@@ -230,9 +240,11 @@ class Settings:
 
         # Display defaults differently for environment variables as they are provided differently
         if self._from_env:
+
             def formatter(x):
                 return x if not isinstance(x, list) else ",".join(x)
         else:
+
             def formatter(x):
                 return x
 

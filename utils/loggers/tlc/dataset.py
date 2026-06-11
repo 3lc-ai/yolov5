@@ -5,14 +5,14 @@
 
 from __future__ import annotations
 
-import tlc
+from typing import Any
 
 from utils.loggers.tlc.constants import TLC_TRAIN_PATH, TLC_VAL_PATH
 from utils.loggers.tlc.settings import Settings
 from utils.loggers.tlc.utils import get_names_from_yolo_table, tlc_check_dataset
 
 
-def check_dataset(data_file: str) -> dict[str, tlc.Table | int | dict[str, int]]:
+def check_dataset(data_file: str) -> dict[str, Any]:
     """Load the 3LC dataset (and check for errors) for training."""
     tables = tlc_check_dataset(data_file)
     settings = Settings.from_env()

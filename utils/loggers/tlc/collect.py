@@ -10,6 +10,7 @@ Available environment variables to configure collection:
     TLC_COLLECT_LOSS: Whether to collect loss. Default: false.
     TLC_COLLECTION_SPLITS: Comma-separated list of splits to collect metrics on. Default: train,val.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,8 +35,6 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from typing import Any
 
-from tlc.client.utils import batched_iterator
-
 from models.common import DetectMultiBackend
 from models.yolo import DetectionModel
 from utils.callbacks import Callbacks
@@ -44,7 +43,12 @@ from utils.loggers.tlc.base import BaseTLCCallback
 from utils.loggers.tlc.constants import TLC_COLLECT_PATH, TLC_COLORSTR
 from utils.loggers.tlc.dataloaders import create_dataloader
 from utils.loggers.tlc.settings import Settings
-from utils.loggers.tlc.utils import get_names_from_yolo_table, tlc_check_dataset, verify_model_table_compatible
+from utils.loggers.tlc.utils import (
+    batched_iterator,
+    get_names_from_yolo_table,
+    tlc_check_dataset,
+    verify_model_table_compatible,
+)
 from utils.loggers.tlc.yolo import TLCDetectionModel
 from utils.loss import ComputeLoss
 from utils.torch_utils import select_device
@@ -70,9 +74,9 @@ def collect_metrics(opt: argparse.Namespace) -> None:
     model, half, batch_size, imgsz = load_model(opt, settings)
 
     # Sanity checks
-    assert all(
-        split in tables for split in settings.collection_splits
-    ), f"Not all splits {settings.collection_splits} are in the dataset {tables}"
+    assert all(split in tables for split in settings.collection_splits), (
+        f"Not all splits {settings.collection_splits} are in the dataset {tables}"
+    )
     project_name = tables[settings.collection_splits[0]].project_name
 
     run = tlc.init(project_name=project_name)
@@ -165,9 +169,9 @@ def load_model(opt: argparse.Namespace, settings: Settings) -> tuple[DetectMulti
 
     stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
     imgsz = check_img_size(opt.imgsz, s=stride)  # check image size
-    half = model.fp16  # FP16 supported on limited backends with CUDA
+    half = bool(model.fp16)  # FP16 supported on limited backends with CUDA
     if engine:
-        batch_size = model.batch_size
+        batch_size = int(model.batch_size)
     else:
         device = model.device
         if not (pt or jit):
@@ -211,7 +215,7 @@ class TLCCollectionCallback(BaseTLCCallback):
         self.metrics_writer = tlc.MetricsTableWriter(
             run_url=self.run.url,
             foreign_table_url=self.table.url,
-            column_schemas=self.metrics_schema,
+            schema=self.metrics_schema,
         )
 
         self.example_ids_for_batch = list(batched_iterator(range(len(self.example_ids)), batch_size=batch_size))

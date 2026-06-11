@@ -1,5 +1,6 @@
 # YOLOv5 🚀 by Ultralytics, AGPL-3.0 license
 """3LC yolo implementation to collect embeddings."""
+
 import torch
 
 from models.yolo import DetectionModel
