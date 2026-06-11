@@ -1,0 +1,32 @@
+# Ruff config for the 3LC integration in this fork.
+#
+# Scoped to utils/loggers/tlc/ and tests/ so upstream YOLOv5 code is not touched.
+# This file takes precedence over the [tool.ruff] block in pyproject.toml.
+#
+# The rule set starts narrow on purpose: it just enforces the basics
+# (errors, undefined names, formatting, import order, deprecated syntax) so the
+# scaffolding PR can land green. We'll broaden to the full 3lc-ultralytics rule
+# set (A, B, C, FURB, RUF, TC) as the integration code is refactored.
+
+line-length = 120
+target-version = "py310"
+
+include = [
+    "utils/loggers/tlc/**/*.py",
+    "tests/**/*.py",
+]
+
+[lint]
+select = [
+    "E", # pycodestyle errors
+    "F", # pyflakes
+    "I", # import order
+    "UP", # pyupgrade
+    "W", # pycodestyle warnings
+]
+# Temporarily ignored — to be re-enabled as part of the 3lc 2.x catch-up PR
+# when the integration code is refactored. Tracked in the catch-up plan.
+ignore = [
+    "E402", # module-level import not at top of file (intentional after check_tlc_version())
+    "E501", # line too long
+]

@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import tlc
 import torch
-from models.common import DetectMultiBackend
 
+from models.common import DetectMultiBackend
 from utils.general import scale_boxes, xywh2xyxy, xyxy2xywhn
 from utils.loggers.tlc import yolo
 from utils.loggers.tlc.constants import TRAINING_PHASE

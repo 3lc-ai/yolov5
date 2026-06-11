@@ -4,9 +4,9 @@ import os
 from typing import Any
 
 import torch
+
 from models.experimental import attempt_load as yolov5_attempt_load
 from models.yolo import DetectionModel
-
 from utils.general import check_amp as yolov5_check_amp
 from utils.loggers.tlc.logger import TLCLogger
 from utils.loggers.tlc.yolo import TLCDetectionModel

@@ -5,18 +5,19 @@ Dataloaders and dataset utils - 3LC integration
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import tlc
 import torch
 from PIL import Image, ImageOps
+from tlc.core.builtins.types.bounding_box import CenteredXYWHBoundingBox
+from tlc.core.utils.progress import track
 from torch.utils.data import DataLoader, distributed
 from tqdm import tqdm
-from tlc.core.utils.progress import track
-from tlc.core.builtins.types.bounding_box import CenteredXYWHBoundingBox
 
 from utils.augmentations import Albumentations
 from utils.dataloaders import InfiniteDataLoader, LoadImagesAndLabels, img2label_paths, seed_worker
@@ -32,7 +33,7 @@ PIN_MEMORY = str(os.getenv("PIN_MEMORY", True)).lower() == "true"  # global pin_
 
 def convert_to_xywh(bbox: tlc.BoundingBox, image_width: int, image_height: int) -> CenteredXYWHBoundingBox:
     """Convert a bounding box to xc, yc, w, h, normalized to [0, 1].
-    
+
     :param bbox: The 3LC bounding box to convert.
     :param image_width: The width of the image.
     :param image_height: The height of the image.
@@ -80,9 +81,9 @@ def create_dataloader(
     seed: int = 0,
 ) -> tuple[DataLoader, LoadImagesAndLabels]:
     """ Create dataloader in the 3LC integration. In addition to the standard behavior, this function also
-    handles 3LC-specific arguments (zero weight exclusion and sampling weights), logging and reading of 
+    handles 3LC-specific arguments (zero weight exclusion and sampling weights), logging and reading of
     other properties required by the 3LC integration logger.
-    
+
     """
     if rect and shuffle:
         LOGGER.warning("WARNING ⚠️ --rect is incompatible with DataLoader shuffle, setting shuffle=False")

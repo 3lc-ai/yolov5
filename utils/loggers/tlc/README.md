@@ -2,6 +2,13 @@
 
 # 3LC Integration
 
+> **New users:** consider [`3lc-ultralytics`](https://pypi.org/project/3lc-ultralytics/),
+> the official 3LC integration with the unified Ultralytics package. It
+> supports YOLOv5 model architectures (along with YOLO11, YOLO12, YOLO26,
+> classification, segmentation, OBB and pose) and is the recommended path
+> for new projects. This standalone YOLOv5 fork is maintained for users
+> who specifically need this codebase.
+
 This document outlines how to use the 3LC integration available for YOLOv5.
 
 ## About 3LC

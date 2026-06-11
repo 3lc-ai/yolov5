@@ -34,9 +34,10 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from typing import Any
 
+from tlc.client.utils import batched_iterator
+
 from models.common import DetectMultiBackend
 from models.yolo import DetectionModel
-
 from utils.callbacks import Callbacks
 from utils.general import LOGGER, check_img_size, increment_path, yaml_save
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -47,7 +48,7 @@ from utils.loggers.tlc.utils import get_names_from_yolo_table, tlc_check_dataset
 from utils.loggers.tlc.yolo import TLCDetectionModel
 from utils.loss import ComputeLoss
 from utils.torch_utils import select_device
-from tlc.client.utils import batched_iterator
+
 
 def collect_metrics(opt: argparse.Namespace) -> None:
     """
