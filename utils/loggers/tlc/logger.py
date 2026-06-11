@@ -9,9 +9,10 @@ from typing import TYPE_CHECKING, Any
 
 import tlc
 import torch
+from tlc.client.utils import batched_iterator
+
 import val as validate
 from models.yolo import DetectionModel
-
 from utils.callbacks import Callbacks
 from utils.general import LOGGER
 from utils.loggers.tlc.base import BaseTLCCallback
@@ -25,7 +26,6 @@ from utils.loggers.tlc.utils import (
     get_names_from_yolo_table,
 )
 from utils.loss import ComputeLoss
-from tlc.client.utils import batched_iterator
 
 if TYPE_CHECKING:
     from utils.loggers.tlc.model_utils import ModelEMA

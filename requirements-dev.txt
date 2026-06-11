@@ -1,0 +1,25 @@
+# Dev/CI dependencies for the 3LC integration in this fork.
+# Owned by the integration; not part of upstream YOLOv5's requirements.txt.
+#
+# 3lc 3.0+ is published on 3LC's public package index, NOT on PyPI, so an
+# extra index is required to resolve it.
+#
+#   pip:  pip install -r requirements.txt -r requirements-dev.txt
+#   uv:   uv pip install -r requirements.txt -r requirements-dev.txt \
+#             --index-strategy unsafe-best-match
+#
+# (uv needs --index-strategy unsafe-best-match because 3LC's index answers to
+#  any package name; pip considers all indexes together by default.)
+
+--extra-index-url https://pypi.3lc.ai/public/repositories/releases-public
+
+# 3LC runtime. `3lc-ultralytics` transitively pulls `3lc[pandas]`; torch comes
+# from yolov5's own requirements.txt. Both packages drop 2.x support at these
+# lower bounds.
+3lc>=3.0.0,<4.0.0
+3lc-ultralytics>=0.3.0,<0.4.0
+
+# Lint / type-check / tests
+ruff>=0.15.0,<0.16
+ty>=0.0.17
+pytest>=8.0.0

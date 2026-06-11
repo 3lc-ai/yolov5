@@ -6,6 +6,7 @@ from packaging import version
 
 from utils.loggers.tlc.constants import TLC_VERSION_REQUIRED
 
+
 def check_tlc_version() -> None:
     """
     Check that the available 3LC version is supported.

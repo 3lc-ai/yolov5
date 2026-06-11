@@ -1,0 +1,49 @@
+# 3LC integration CI for the 3lc-ai/yolov5 fork.
+#
+# Owned by the 3LC integration in utils/loggers/tlc/. Runs on this fork's
+# branches (develop, tlc_*) only; upstream's ci-testing.yml continues to fire
+# on master.
+#
+# CI uses `uv` for fast dependency installs and `uvx` for one-shot tool runs.
+# Users still install with plain `pip install -r requirements.txt` per upstream.
+
+name: 3LC integration CI
+
+on:
+  pull_request:
+    branches: [develop, "tlc_*"]
+  push:
+    branches: [develop, "tlc_*"]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: ruff check
+        run: uvx ruff check
+      # `ruff format --check` and `ty check` will be added in a follow-up PR
+      # alongside the integration code refactor. ty surfaces ~10 pre-existing
+      # return-type and overload issues in the current tlc code; fixing them
+      # belongs with the catch-up work, not with scaffolding.
+
+  tests:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: pytest
+        # Once real integration tests land in a follow-up PR, install 3lc here.
+        # `-o addopts=` overrides upstream's broken [tool.pytest] block in
+        # pyproject.toml (it uses a string instead of a list, which newer
+        # pytest rejects). We don't touch pyproject.toml to fix it because
+        # that file is upstream-owned.
+        run: uvx pytest -o "addopts=" tests/

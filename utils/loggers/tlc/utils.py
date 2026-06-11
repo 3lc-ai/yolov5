@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 import tlc
 import yaml
@@ -224,7 +225,7 @@ def get_or_create_3lc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str,
         table_name = split
     else:
         table_name = "initial"
-    
+
     try:
         table = tlc.Table.from_yolo(
             dataset_yaml_file=yolo_yaml_file,
@@ -313,7 +314,7 @@ def check_table_compatibility(table: tlc.Table) -> bool:
 
     for coordinate in [tlc.X0, tlc.Y0, tlc.X1, tlc.Y1]:
         assert coordinate in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain a {coordinate}"
-    
+
     return True
 
 

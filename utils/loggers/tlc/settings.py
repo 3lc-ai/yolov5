@@ -230,9 +230,11 @@ class Settings:
 
         # Display defaults differently for environment variables as they are provided differently
         if self._from_env:
-            formatter = lambda x: x if not isinstance(x, list) else ",".join(x)
+            def formatter(x):
+                return x if not isinstance(x, list) else ",".join(x)
         else:
-            formatter = lambda x: x
+            def formatter(x):
+                return x
 
         field_info_list = [
             {
