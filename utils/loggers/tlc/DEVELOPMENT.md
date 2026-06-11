@@ -12,10 +12,6 @@ documentation lives in [README.md](README.md).
 | `feature/<owner>/<topic>` | Short-lived feature branches off `develop`. |
 | `tlc_<version>` | Historical, frozen branches. Read-only. |
 
-> **Status:** the integration code currently targets `3lc` 2.7. Migration to
-> `3lc` 3.0 is in progress; `requirements-dev.txt` already pins the 3.0
-> target for that work.
-
 ## Local development
 
 Install the dev dependencies on top of upstream's requirements. `3lc` 3.0+ is
