@@ -1,0 +1,48 @@
+# 3LC integration lint/format/type checks for the 3lc-ai/yolov5 fork.
+#
+# Owned by the 3LC integration in utils/loggers/tlc/. Runs on this fork's
+# branches (develop, tlc_*) only; upstream's ci-testing.yml continues to fire
+# on master. Tests live in 3lc-tests.yml.
+
+name: 3LC lint
+
+on:
+  pull_request:
+    branches: [develop, "tlc_*"]
+  push:
+    branches: [develop, "tlc_*"]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: ruff & ty
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          # This repo has no uv.lock (not a uv project), which is the
+          # default cache-key glob and a hard error when absent.
+          cache-dependency-glob: requirements*.txt
+      # The ruff steps need no dependencies — run them first for fast failures.
+      - name: ruff check
+        run: uvx ruff check
+      - name: ruff format
+        run: uvx ruff format --check utils/loggers/tlc/ tests/
+      - name: Install dependencies
+        # ty resolves third-party imports (tlc, torch, ...) from the installed
+        # environment, so type-checking needs the full requirements. torch is
+        # installed first from the CPU index so the CUDA wheels (several GB)
+        # are never pulled onto the runner; the requirements installs then see
+        # torch as already satisfied.
+        #
+        # The torch<2.6 / numpy<2 pins mirror 3lc-tests.yml (upstream-YOLOv5
+        # lag; drop after the next upstream sync) and keep the type-checked
+        # environment identical to the tested one.
+        run: |
+          uv venv
+          uv pip install "torch<2.6" "torchvision<0.21" --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -r requirements.txt -r requirements-dev.txt "numpy<2" --index-strategy unsafe-best-match
+      - name: ty check
+        run: .venv/bin/ty check

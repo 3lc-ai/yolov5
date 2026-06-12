@@ -21,10 +21,16 @@ This document outlines how to use the 3LC integration available for YOLOv5.
 
 ## Getting Started
 
-The integration is automatically enabled if the `3lc` package is installed in your environment. It can be installed with 
+Clone the `develop` branch of this fork and install the YOLOv5 requirements along with the 3LC packages. The integration requires both `3lc` and `3lc-ultralytics`, which are published on 3LC's public package index, not on PyPI, so an extra index URL is needed:
+
+```bash
+git clone -b develop https://github.com/3lc-ai/yolov5.git
+cd yolov5
+pip install -r requirements.txt "torch<2.6" "numpy<2"  # torch/numpy bounds needed until the next upstream sync
+pip install 3lc 3lc-ultralytics --extra-index-url https://pypi.3lc.ai/public/repositories/releases-public
 ```
-pip install 3lc
-```
+
+The integration is automatically enabled when `3lc` is installed in your environment.
 
 ### First Time
 

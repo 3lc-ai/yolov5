@@ -1,0 +1,52 @@
+# 3LC integration tests for the 3lc-ai/yolov5 fork.
+#
+# Owned by the 3LC integration in utils/loggers/tlc/. Runs on this fork's
+# branches (develop, tlc_*) only; upstream's ci-testing.yml continues to fire
+# on master. Lint/format/type checks live in 3lc-lint.yml.
+#
+# The end-to-end tests train and collect metrics on coco128 for real, so the
+# `TLC_API_KEY` repository secret must be set to a valid 3LC API key — they
+# fail (not skip) without one.
+
+name: 3LC tests
+
+on:
+  pull_request:
+    branches: [develop, "tlc_*"]
+  push:
+    branches: [develop, "tlc_*"]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          # This repo has no uv.lock (not a uv project), which is the
+          # default cache-key glob and a hard error when absent.
+          cache-dependency-glob: requirements*.txt
+      - name: Install dependencies
+        # torch is installed first from the CPU index so the CUDA wheels
+        # (several GB) are never pulled onto the runner; the requirements
+        # installs then see torch as already satisfied.
+        #
+        # Pins that paper over upstream-YOLOv5 lag — drop both after the next
+        # upstream sync: torch<2.6 (torch 2.6 flipped torch.load to
+        # weights_only=True) and numpy<2 (numpy 2.0 removed np.trapz, still
+        # used by utils/metrics.py at this fork's merge-base).
+        run: |
+          uv venv
+          uv pip install "torch<2.6" "torchvision<0.21" --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -r requirements.txt -r requirements-dev.txt "numpy<2" --index-strategy unsafe-best-match
+      - name: pytest
+        # `-o addopts=` overrides upstream's broken [tool.pytest] block in
+        # pyproject.toml (it uses a string instead of a list, which newer
+        # pytest rejects). We don't touch pyproject.toml to fix it because
+        # that file is upstream-owned.
+        run: .venv/bin/pytest -o "addopts=" tests/
+        env:
+          TLC_API_KEY: ${{ secrets.TLC_API_KEY }}

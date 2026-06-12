@@ -2,10 +2,10 @@
 """
 Dataloaders and dataset utils - 3LC integration
 """
+
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from typing import Any
@@ -14,8 +14,8 @@ import numpy as np
 import tlc
 import torch
 from PIL import Image, ImageOps
-from tlc.core.builtins.types.bounding_box import CenteredXYWHBoundingBox
-from tlc.core.utils.progress import track
+from tlc.data_types import BoundingBoxes2D
+from tlc.helpers import AnnotationHelper, AnnotationType
 from torch.utils.data import DataLoader, distributed
 from tqdm import tqdm
 
@@ -31,34 +31,35 @@ LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable
 RANK = int(os.getenv("RANK", -1))
 PIN_MEMORY = str(os.getenv("PIN_MEMORY", True)).lower() == "true"  # global pin_memory for dataloaders
 
-def convert_to_xywh(bbox: tlc.BoundingBox, image_width: int, image_height: int) -> CenteredXYWHBoundingBox:
-    """Convert a bounding box to xc, yc, w, h, normalized to [0, 1].
 
-    :param bbox: The 3LC bounding box to convert.
-    :param image_width: The width of the image.
-    :param image_height: The height of the image.
-    :return: The bounding box converted to xc, yc, w, h.
+def tlc_table_row_to_yolo_label(
+    row: dict[str, Any], bb_column: str, bb_schema: tlc.Schema | None
+) -> tuple[np.ndarray, tuple[int, int]]:
+    """Convert the bounding boxes in a 3LC table row to a YOLO label array.
+
+    Handles both legacy (`bb_list` dict) and 3.0 (`BoundingBoxes2D`) stored formats.
+
+    :param row: The table row.
+    :param bb_column: The name of the bounding box column.
+    :param bb_schema: The schema of the bounding box column for legacy tables, None for 3.0 tables.
+    :return: A (labels, (width, height)) tuple, where labels is an Nx5 array of
+        [class, xc, yc, w, h] rows with coordinates normalized to [0, 1].
     """
-    if isinstance(bbox, CenteredXYWHBoundingBox) and bbox.normalized:
-        return bbox
-    else:
-        return CenteredXYWHBoundingBox.from_top_left_xywh(bbox.to_top_left_xywh().normalize(image_width, image_height))
+    raw = row[bb_column]
+    bbs = BoundingBoxes2D.from_legacy_row(raw, bb_schema) if bb_schema is not None else BoundingBoxes2D.from_row(raw)
 
+    image_width = int(bbs.x_max - (bbs.x_min or 0))
+    image_height = int(bbs.y_max - (bbs.y_min or 0))
 
-def unpack_box(bbox: dict[str, Any], bounding_box_factory: Callable[..., tlc.BoundingBox], image_width: int, image_height: int) -> list[int | float]:
-    coordinates = [bbox[tlc.X0], bbox[tlc.Y0], bbox[tlc.X1], bbox[tlc.Y1]]
+    if bbs.num_instances == 0 or bbs.labels is None:
+        return np.zeros((0, 5), dtype=np.float32), (image_width, image_height)
 
-    xywh_coordinates = convert_to_xywh(bounding_box_factory(coordinates), image_width, image_height)
+    cxywh = bbs.bounding_boxes_cxywh / np.array(
+        [image_width, image_height, image_width, image_height], dtype=np.float32
+    )
+    labels = np.asarray(bbs.labels, dtype=np.float32).reshape(-1, 1)
 
-    return [bbox[tlc.LABEL], *xywh_coordinates]
-
-
-def tlc_table_row_to_yolo_label(row: dict[str, Any], bounding_box_factory: Callable[..., tlc.BoundingBox], image_width: int, image_height: int) -> np.ndarray:
-    unpacked = [unpack_box(box, bounding_box_factory, image_width, image_height) for box in row[tlc.BOUNDING_BOXES][tlc.BOUNDING_BOX_LIST]]
-    arr = np.array(unpacked, ndmin=2, dtype=np.float32)
-    if len(unpacked) == 0:
-        arr = arr.reshape(0, 5)
-    return arr
+    return np.concatenate([labels, cxywh.astype(np.float32)], axis=1), (image_width, image_height)
 
 
 def create_dataloader(
@@ -80,7 +81,7 @@ def create_dataloader(
     shuffle: bool = False,
     seed: int = 0,
 ) -> tuple[DataLoader, LoadImagesAndLabels]:
-    """ Create dataloader in the 3LC integration. In addition to the standard behavior, this function also
+    """Create dataloader in the 3LC integration. In addition to the standard behavior, this function also
     handles 3LC-specific arguments (zero weight exclusion and sampling weights), logging and reading of
     other properties required by the 3LC integration logger.
 
@@ -222,7 +223,7 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
         self.tlc_name = table.dataset_name
         self.tlc_table_url = table.url.to_str()
 
-        self.sampling_weights = []
+        sampling_weights = []
         self.im_files = []
         self.shapes = []
         self.labels = []
@@ -232,19 +233,26 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
 
         pbar = iter(table.table_rows)
         if RANK in {-1, 0}:
-            pbar = track(pbar, description=f"Loading data from 3LC Table {table.dataset_name}/{table.url.name}", total=len(table))
+            pbar = tqdm(
+                pbar,
+                desc=f"Loading data from 3LC Table {table.dataset_name}/{table.url.name}",
+                total=len(table),
+                bar_format=TQDM_BAR_FORMAT,
+            )
 
         # Keep track of which example ids are in use (map from index in the yolo dataset to example id)
         self.example_ids = []
         num_ignored = 0
 
-        try:
-            bounding_box_factory = tlc.BoundingBox.from_schema(table.rows_schema.values[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST])
-        except Exception as e:
-            raise ValueError(f"Error inferring bounding box format for {table.dataset_name}.") from e
+        annotation = AnnotationHelper.find(table, type=AnnotationType.BOUNDING_BOXES)
+        if annotation is None:
+            raise ValueError(f"Error inferring bounding box format for {table.dataset_name}.")
+        bb_column = annotation.name
+        is_legacy = annotation.type is AnnotationType.LEGACY_BOUNDING_BOXES
+        bb_schema = table.rows_schema.values[bb_column] if is_legacy else None
 
         for example_id, row in enumerate(pbar):
-            im_file = tlc.Url(row[tlc.IMAGE]).to_absolute().to_str()
+            im_file = tlc.Url(row[tlc.constants.IMAGE]).to_absolute().to_str()
 
             # Fix fixable and discard corrupt images
             fixed, corrupt, msg = fix_image(im_file)
@@ -254,22 +262,23 @@ class TLCLoadImagesAndLabels(LoadImagesAndLabels):
             num_corrupt += int(corrupt)
 
             # Ignore zero weight images if tlc_exclude_zero_weight is set
-            ignore = tlc_exclude_zero_weight and row[tlc.SAMPLE_WEIGHT] == 0.0
+            ignore = tlc_exclude_zero_weight and row[tlc.constants.SAMPLE_WEIGHT] == 0.0
             num_ignored += int(ignore)
 
             discard = corrupt or ignore
 
             if not discard:
-                self.sampling_weights.append(row[tlc.SAMPLE_WEIGHT])
+                labels, shape = tlc_table_row_to_yolo_label(row, bb_column, bb_schema)
+                sampling_weights.append(row[tlc.constants.SAMPLE_WEIGHT])
                 self.im_files.append(str(Path(im_file)))  # Ensure path is os.sep-delimited
-                self.shapes.append((row[tlc.WIDTH], row[tlc.HEIGHT]))
-                self.labels.append(tlc_table_row_to_yolo_label(row, bounding_box_factory, row[tlc.WIDTH], row[tlc.HEIGHT]))
+                self.shapes.append(shape)
+                self.labels.append(labels)
                 self.example_ids.append(example_id)
 
         self.shapes = np.array(self.shapes)
 
-        self.sampling_weights = np.array(self.sampling_weights)
-        self.sampling_weights = self.sampling_weights / np.sum(self.sampling_weights)
+        sampling_weights_array = np.array(sampling_weights)
+        self.sampling_weights = sampling_weights_array / sampling_weights_array.sum()
 
         assert len(self.im_files) == len(self.example_ids)
 

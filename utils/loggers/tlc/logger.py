@@ -1,5 +1,6 @@
 # YOLOv5 🚀 AGPL-3.0 license
 """3LC Logger used for training."""
+
 from __future__ import annotations
 
 import os
@@ -9,7 +10,6 @@ from typing import TYPE_CHECKING, Any
 
 import tlc
 import torch
-from tlc.client.utils import batched_iterator
 
 import val as validate
 from models.yolo import DetectionModel
@@ -21,6 +21,7 @@ from utils.loggers.tlc.dataset import check_dataset
 from utils.loggers.tlc.loss import TLCComputeLoss
 from utils.loggers.tlc.settings import Settings
 from utils.loggers.tlc.utils import (
+    batched_iterator,
     create_tlc_info_string_before_training,
     get_metrics_collection_epochs,
     get_names_from_yolo_table,
@@ -69,7 +70,7 @@ class TLCLogger(BaseTLCCallback):
         """Reset the singleton instance of the TLCLogger."""
         cls._instance = None
 
-    def initialize(self, opt=None, hyp=None):
+    def initialize(self, opt=None, hyp: dict[str, Any] | None = None):
         self.opt = opt
         self.hyp = hyp
         self._save_dir = Path(self.opt.save_dir)  # Path to save results
@@ -160,12 +161,15 @@ class TLCLogger(BaseTLCCallback):
     def validation_train_loader(self) -> torch.utils.data.DataLoader:
         if not self._validation_train_loader:
             self._create_validation_train_loader_from_val_loader()
+        assert self._validation_train_loader is not None
         return self._validation_train_loader
 
     @property
     def table(self) -> tlc.Table:
         """Get the table for the current split."""
-        return self.val_table if self._collecting_on == "val" else self.train_table
+        table = self.val_table if self._collecting_on == "val" else self.train_table
+        assert table is not None
+        return table
 
     @property
     def split(self) -> str:
@@ -193,6 +197,7 @@ class TLCLogger(BaseTLCCallback):
 
     def on_train_start(self) -> None:
         # Create a 3LC run and log run parameters
+        assert self.hyp is not None
         self.run = tlc.init(project_name=self.train_table.project_name)
 
         parameters = {k: v for k, v in vars(self.opt).items() if k != "hyp"}
@@ -249,7 +254,8 @@ class TLCLogger(BaseTLCCallback):
         """
         paths = list(last.parent.glob("*.pt"))
         for path in paths:
-            ckpt = torch.load(path, map_location="cpu")
+            # weights_only=False: checkpoints written by this training run contain full model objects
+            ckpt = torch.load(path, map_location="cpu", weights_only=False)
             ckpt["model"].__class__ = DetectionModel
             ckpt["ema"].__class__ = DetectionModel
             torch.save(ckpt, path)
@@ -262,8 +268,8 @@ class TLCLogger(BaseTLCCallback):
         """
         if self._settings.image_embeddings_dim != 0:
             LOGGER.info(
-            f"{TLC_COLORSTR}Reducing embeddings to {self._settings.image_embeddings_dim}D with {self._settings.image_embeddings_reducer}, this may take some time..."
-        )
+                f"{TLC_COLORSTR}Reducing embeddings to {self._settings.image_embeddings_dim}D with {self._settings.image_embeddings_reducer}, this may take some time..."
+            )
             self.run.reduce_embeddings_by_foreign_table_url(
                 self.val_table.url,
                 method=self._settings.image_embeddings_reducer,
@@ -295,7 +301,7 @@ class TLCLogger(BaseTLCCallback):
             self.metrics_writer = tlc.MetricsTableWriter(
                 run_url=self.run.url,
                 foreign_table_url=self.train_table.url,
-                column_schemas=self.metrics_schema,
+                schema=self.metrics_schema,
             )
             effective_train_size = self.validation_train_loader.dataset.n
             self.example_ids_for_batch = list(
@@ -360,13 +366,11 @@ class TLCLogger(BaseTLCCallback):
         self.metrics_writer = tlc.MetricsTableWriter(
             run_url=self.run.url,
             foreign_table_url=self.val_table.url,
-            column_schemas=self.metrics_schema,
+            schema=self.metrics_schema,
         )
         effective_validation_size = self.val_loader.dataset.n
         self.example_ids_for_batch = list(
-            batched_iterator(
-                range(effective_validation_size), batch_size=self._validation_loader_args["batch_size"]
-            )
+            batched_iterator(range(effective_validation_size), batch_size=self._validation_loader_args["batch_size"])
         )
 
     def on_val_batch_end(self, batch_i, images, targets, paths, shapes, outputs, train_out) -> None:

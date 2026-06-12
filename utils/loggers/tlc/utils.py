@@ -3,21 +3,36 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Iterable, Iterator
+from itertools import islice
 from pathlib import Path
 from typing import TypeVar
 
 import tlc
 import yaml
-from tlc.client.torch.metrics.metrics_collectors.bounding_box_metrics_collector import (
-    _TLCPredictedBoundingBox,
-    _TLCPredictedBoundingBoxes,
-)
+from tlc.helpers import AnnotationHelper, AnnotationType, SchemaHelper
+from tlc_ultralytics import create_tables_from_yaml_file
+from tlc_ultralytics.detect.utils import check_det_table
+from tlc_ultralytics.utils.dataset import parse_3lc_yaml_file
 
 from utils.general import LOGGER, check_dataset
-from utils.loggers.tlc.constants import TLC_COLORSTR, TLC_PREFIX, TRAINING_PHASE
+from utils.loggers.tlc.constants import TLC_COLORSTR, TLC_PREFIX
 
-T = TypeVar("T", bound=Callable)  # Generic type for environment variable parsing functions
+T = TypeVar("T")
+
+
+def batched_iterator(iterable: Iterable[T], batch_size: int) -> Iterator[list[T]]:
+    """
+    Yield successive batches from an iterable. The last batch may be smaller than batch_size.
+
+    Replaces `tlc.client.utils.batched_iterator`, which was removed in 3lc 3.0.
+
+    :param iterable: The iterable to batch.
+    :param batch_size: The number of items per batch.
+    """
+    iterator = iter(iterable)
+    while batch := list(islice(iterator, batch_size)):
+        yield batch
 
 
 def yolo_predicted_bounding_box_schema(categories: dict[int, str]) -> tlc.Schema:
@@ -27,46 +42,11 @@ def yolo_predicted_bounding_box_schema(categories: dict[int, str]) -> tlc.Schema
     :param categories: Categories for the current dataset.
     :returns: The YOLO bounding box schema for predicted boxes.
     """
-    label_value_map = {float(i): tlc.MapElement(class_name) for i, class_name in categories.items()}
+    from tlc_ultralytics.detect.utils import yolo_predicted_bounding_box_schema as predicted_bounding_box_schema
 
-    bounding_box_schema = tlc.BoundingBoxListSchema(
-        label_value_map=label_value_map,
-        x0_number_role=tlc.NUMBER_ROLE_BB_CENTER_X,
-        x1_number_role=tlc.NUMBER_ROLE_BB_SIZE_X,
-        y0_number_role=tlc.NUMBER_ROLE_BB_CENTER_Y,
-        y1_number_role=tlc.NUMBER_ROLE_BB_SIZE_Y,
-        x0_unit=tlc.UNIT_RELATIVE,
-        y0_unit=tlc.UNIT_RELATIVE,
-        x1_unit=tlc.UNIT_RELATIVE,
-        y1_unit=tlc.UNIT_RELATIVE,
-        description="Predicted Bounding Boxes",
-        writable=False,
-        is_prediction=True,
-        include_segmentation=False,
-    )
+    label_value_map = {float(i): tlc.schemas.MapElement(class_name) for i, class_name in categories.items()}
 
-    return bounding_box_schema
-
-
-def training_phase_schema() -> tlc.Schema:
-    return tlc.Schema(
-        display_name=TRAINING_PHASE,
-        description=(
-            "'During' metrics are collected with EMA during training, "
-            "'After' is with the final model weights after completed training."
-        ),
-        display_importance=tlc.DISPLAY_IMPORTANCE_EPOCH - 1,  # Right hand side of epoch in the Dashboard
-        writable=False,
-        computable=False,
-        value=tlc.Int32Value(
-            value_min=0,
-            value_max=1,
-            value_map={
-                float(0): tlc.MapElement(display_name="During"),
-                float(1): tlc.MapElement(display_name="After"),
-            },
-        ),
-    )
+    return predicted_bounding_box_schema(label_value_map)
 
 
 def yolo_loss_schemas(num_classes: int) -> dict[str, tlc.Schema]:
@@ -76,76 +56,11 @@ def yolo_loss_schemas(num_classes: int) -> dict[str, tlc.Schema]:
     :returns: The YOLO loss schemas.
     """
     schemas = {}
-    schemas["box_loss"] = tlc.Schema(
-        description="Box loss", writable=False, value=tlc.Float32Value(), display_importance=3004
-    )
-    schemas["obj_loss"] = tlc.Schema(
-        description="Object loss", writable=False, value=tlc.Float32Value(), display_importance=3005
-    )
+    schemas["box_loss"] = tlc.schemas.Float32Schema(description="Box loss", writable=False)
+    schemas["obj_loss"] = tlc.schemas.Float32Schema(description="Object loss", writable=False)
     if num_classes > 1:
-        schemas["cls_loss"] = tlc.Schema(
-            description="Classification loss", writable=False, value=tlc.Float32Value(), display_importance=3006
-        )
+        schemas["cls_loss"] = tlc.schemas.Float32Schema(description="Classification loss", writable=False)
     return schemas
-
-
-def yolo_image_embeddings_schema(activation_size=512) -> dict[str, tlc.Schema]:
-    """
-    Create a 3LC schema for YOLOv5 image embeddings.
-
-    :param activation_size: The size of the activation tensor.
-    :returns: The YOLO image embeddings schema.
-    """
-    embedding_schema = tlc.Schema(
-        "Embedding",
-        "Large NN embedding",
-        writable=False,
-        computable=False,
-        value=tlc.Float32Value(number_role=tlc.NUMBER_ROLE_NN_EMBEDDING),
-        size0=tlc.DimensionNumericValue(
-            value_min=activation_size, value_max=activation_size, enforce_min=True, enforce_max=True
-        ),
-    )
-    return {"embeddings": embedding_schema}
-
-
-def construct_bbox_struct(
-    predicted_annotations: list[dict[str, int | float | dict[str, float]]],
-    image_width: int,
-    image_height: int,
-    inverse_label_mapping: dict[int, int] | None = None,
-) -> _TLCPredictedBoundingBoxes:
-    """
-    Construct a 3LC bounding box struct from a list of bounding boxes.
-
-    :param predicted_annotations: A list of predicted bounding boxes.
-    :param image_width: The width of the image.
-    :param image_height: The height of the image.
-    :param inverse_label_mapping: A mapping from predicted label to category id.
-    """
-
-    bbox_struct = _TLCPredictedBoundingBoxes(
-        bb_list=[],
-        image_width=image_width,
-        image_height=image_height,
-    )
-
-    for pred in predicted_annotations:
-        bbox, label, score, iou = pred["bbox"], pred["category_id"], pred["score"], pred["iou"]
-        label_val = inverse_label_mapping[label] if inverse_label_mapping is not None else label
-        bbox_struct["bb_list"].append(
-            _TLCPredictedBoundingBox(
-                label=label_val,
-                confidence=score,
-                iou=iou,
-                x0=bbox[0],
-                y0=bbox[1],
-                x1=bbox[2],
-                y1=bbox[3],
-            )
-        )
-
-    return bbox_struct
 
 
 def get_metrics_collection_epochs(start: int, epochs: int, interval: int, disable: bool) -> list[int]:
@@ -189,133 +104,10 @@ def create_tlc_info_string_before_training(metrics_collection_epochs: list[int],
     else:
         plural_epochs = len(metrics_collection_epochs) > 1
         mc_epochs_str = ",".join(map(str, metrics_collection_epochs))
-        tlc_mc_string = f'Collecting metrics for epoch{"s" if plural_epochs else ""} {mc_epochs_str}'
+        tlc_mc_string = f"Collecting metrics for epoch{'s' if plural_epochs else ''} {mc_epochs_str}"
         tlc_mc_string += " and after training for this run."
 
     return tlc_mc_string
-
-
-def get_or_create_3lc_table_from_yolo(yolo_yaml_file: tlc.Url | str, split: str, override_split_path: str) -> tlc.Table:
-    """
-    Get or create a 3LC table from a YOLO YAML file.
-
-    :param yolo_yaml_file: The path to the YOLO YAML file.
-    :param split: The split to get the table for.
-    :param override_split_path: The path to override the split path in the YAML file.
-    :returns: The 3LC table.
-    """
-    # Resolving logic for YOLO YAML file
-    dataset_name_base = Path(yolo_yaml_file).stem
-    dataset_name = dataset_name_base + "-" + split
-    project_name = "yolov5-" + dataset_name_base
-
-    yolo_yaml_name = Path(yolo_yaml_file).name
-    yolo_yaml_file = str(Path(yolo_yaml_file).resolve())  # Ensure absolute path for resolving Table Url
-
-    # Previously the table name was the split name and now it is "initial", so we need to check for backwards compatibility
-    table_url_backcompatible = tlc.Table._resolve_table_url(
-        table_url=None,
-        root_url=None,
-        project_name=project_name,
-        dataset_name=dataset_name,
-        table_name=split,
-    )
-
-    if table_url_backcompatible.exists():
-        table_name = split
-    else:
-        table_name = "initial"
-
-    try:
-        table = tlc.Table.from_yolo(
-            dataset_yaml_file=yolo_yaml_file,
-            split=split,
-            override_split_path=override_split_path,
-            structure=None,
-            table_name=table_name,
-            dataset_name=dataset_name,
-            project_name=project_name,
-            if_exists="raise",
-            add_weight_column=True,
-            description=f"Created with YOLOv5 integration from {yolo_yaml_name}",
-        )
-        table.write_to_row_cache(create_url_if_empty=True, overwrite_if_exists=False)  # Always cache for YOLO tables
-        LOGGER.info(f"{TLC_COLORSTR}Created {split} table {table.url} from YAML file {yolo_yaml_file}")
-
-    except FileExistsError:
-        # Table already exists, reuse it instead and log it
-        table = tlc.Table.from_yolo(
-            dataset_yaml_file=yolo_yaml_file,
-            split=split,
-            override_split_path=override_split_path,
-            structure=None,
-            table_name=table_name,
-            dataset_name=dataset_name,
-            project_name=project_name,
-            if_exists="reuse",
-            add_weight_column=True,
-            description=f"Created with YOLOv5 integration from {yolo_yaml_name}",
-        )
-        latest_table = table.latest()
-
-        if latest_table == table:
-            LOGGER.info(f"{TLC_COLORSTR}Using existing {split} table for YAML file {yolo_yaml_file}: {table.url}")
-        else:
-            LOGGER.info(f"{TLC_COLORSTR}Using latest {split} table from YAML file {yolo_yaml_file}: {latest_table.url}")
-
-        # Always use the latest table for YOLO YAML based tables
-        table = latest_table
-
-    return table
-
-
-def get_tlc_table_from_url(table_url: tlc.Url, split: str) -> tlc.Table:
-    """
-    Get a 3LC table from a URL.
-
-    :param table_url: The Url of the table.
-    :param split: The split the table corresponds to.
-    :returns: The 3LC table.
-    :raises: ValueError if the table does not exist.
-    :raises: ValueError if the table is not compatible with YOLOv5.
-    """
-
-    try:
-        table = tlc.Table.from_url(table_url)
-        LOGGER.info(f"{TLC_COLORSTR}Using {split} revision {table_url}")
-    except FileNotFoundError:
-        raise ValueError(f"Could not find Table {table_url} for {split} split")
-
-    try:
-        check_table_compatibility(table)
-    except AssertionError as e:
-        raise ValueError(f"Table {table_url} is not compatible with YOLOv5") from e
-
-    table.ensure_fully_defined()
-    return table
-
-
-def check_table_compatibility(table: tlc.Table) -> bool:
-    """
-    Check that the 3LC Table is compatible with YOLOv5.
-
-    :param table: The 3LC Table to check.
-    :returns: True if the Table is compatible, False otherwise.
-    """
-
-    row_schema = table.row_schema.values
-    assert tlc.IMAGE in row_schema, f"Table does not contain an image column {tlc.IMAGE}"
-    assert tlc.WIDTH in row_schema, f"Table does not contain a width column {tlc.WIDTH}"
-    assert tlc.HEIGHT in row_schema, f"Table does not contain a height column {tlc.HEIGHT}"
-    assert tlc.BOUNDING_BOXES in row_schema, "Table does not contain a bounding box column"
-    assert tlc.BOUNDING_BOX_LIST in row_schema[tlc.BOUNDING_BOXES].values, "Bounding box column does not contain a bounding box list"
-    assert tlc.SAMPLE_WEIGHT in row_schema, f"Table does not contain a sample weight column {tlc.SAMPLE_WEIGHT}"
-    assert tlc.LABEL in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain a label {tlc.LABEL}"
-
-    for coordinate in [tlc.X0, tlc.Y0, tlc.X1, tlc.Y1]:
-        assert coordinate in row_schema[tlc.BOUNDING_BOXES].values[tlc.BOUNDING_BOX_LIST].values, f"Bounding box list does not contain a {coordinate}"
-
-    return True
 
 
 def write_3lc_yaml(data_file: str, tables: dict[str, tlc.Table]) -> None:
@@ -340,7 +132,7 @@ def write_3lc_yaml(data_file: str, tables: dict[str, tlc.Table]) -> None:
     split_paths_latest = {split: f"{path}:latest" for split, path in split_paths.items()}
 
     # Create 3LC yaml file
-    new_yaml_url.write(yaml.dump(split_paths_latest, sort_keys=False, encoding="utf-8"))
+    new_yaml_url.write_text(yaml.dump(split_paths_latest, sort_keys=False))
 
     LOGGER.info(
         f"{TLC_COLORSTR}Created 3LC YAML file: {str(new_yaml_url)}. To use this file,"
@@ -369,52 +161,43 @@ def tlc_check_dataset(data_file: str, get_splits: tuple | list = ("train", "val"
                 "YOLOv5 dataset check failed. If you are using a 3LC YAML file, remember the 3LC:// prefix."
             ) from e
 
-        # data_file_content = yaml.safe_load(data_file_url.read())
-        tables = {}
-        for key in ("train", "val", "test"):
-            if key in data_dict and data_dict[key]:
-                tables[key] = get_or_create_3lc_table_from_yolo(data_file, split=key, override_split_path=data_dict[key])
+        splits = [key for key in ("train", "val", "test") if data_dict.get(key)]
+        yolo_yaml_name = Path(data_file).name
+
+        tables = create_tables_from_yaml_file(
+            data_file,
+            task="detect",
+            project_name="yolov5-" + Path(data_file).stem,
+            splits=splits,
+            description=f"Created with YOLOv5 integration from {yolo_yaml_name}",
+        )
 
         # Write all tables to the 3LC YAML file
         write_3lc_yaml(data_file, tables)
+
+        # Always use the latest table for YOLO YAML based tables
+        for split, table in tables.items():
+            latest_table = table.latest()
+            if latest_table != table:
+                LOGGER.info(f"{TLC_COLORSTR}Using latest {split} table from YAML file {data_file}: {latest_table.url}")
+            tables[split] = latest_table
 
         # Remove any tables that are not in get_splits
         tables = {split: table for split, table in tables.items() if split in get_splits}
 
     # 3LC YAML file
     else:
-        # Read the YAML file, removing the prefix
-        if not (data_file_url := tlc.Url(data_file.replace(TLC_PREFIX, ""))).exists():
-            raise FileNotFoundError(f"Could not find YAML file {data_file_url}")
+        tables = parse_3lc_yaml_file(data_file)
+        tables = {split: table for split, table in tables.items() if split in get_splits}
 
-        data_config = yaml.safe_load(data_file_url.read())
+        for split, table in tables.items():
+            try:
+                check_det_table(table)
+            except ValueError as e:
+                raise ValueError(f"Table {table.url} is not compatible with YOLOv5") from e
 
-        path = data_config.get("path")
-        splits = [key for key in data_config if key != "path"]
-
-        tables = {}
-        for split in splits:
-            if split not in get_splits:
-                continue
-
-            split_path = data_config[split]
-            latest = split_path.endswith(":latest")
-
-            if latest:
-                split_path = data_config[split][:-7]
-
-            url = tlc.Url(path) / split_path if path else tlc.Url(split_path)
-
-            table = get_tlc_table_from_url(table_url=url, split=split)
-
-            # Use latest revision if :latest is specified
-            if latest:
-                prev_url = url
-                table = table.latest()
-                if prev_url != table.url:
-                    LOGGER.info(f"{TLC_COLORSTR}Using latest revision for {split} set: {table.url}.")
-
-            tables[split] = table
+            table.ensure_fully_defined()
+            LOGGER.info(f"{TLC_COLORSTR}Using {split} revision {table.url}")
 
     # Check that the tables have the same bounding box value maps
     value_maps = [get_names_from_yolo_table(table) for table in tables.values()]
@@ -423,21 +206,33 @@ def tlc_check_dataset(data_file: str, get_splits: tuple | list = ("train", "val"
     return tables
 
 
-def get_names_from_yolo_table(table: tlc.Table, value_path: str = "bbs.bb_list.label") -> dict[int, str]:
+def get_names_from_yolo_table(table: tlc.Table) -> dict[int, str]:
     """
     Get the category names from a YOLO table.
 
     :param table: The YOLO table.
     :returns: The category names for YOLO.
     """
-    value_map = table.get_value_map(value_path)
-    return {int(k): v["internal_name"] for k, v in value_map.items()}
+    annotation = AnnotationHelper.find(table, type=AnnotationType.BOUNDING_BOXES)
+    if annotation is None or annotation.label_path is None:
+        raise ValueError(f"No bounding box label column found in Table {table.url}.")
+
+    value_map = table.get_value_map(annotation.label_path)
+    if value_map is None:
+        raise ValueError(f"Failed to get value map for Table {table.url}.")
+
+    return SchemaHelper.to_simple_value_map(value_map)
+
 
 def verify_model_table_compatible(model, table: tlc.Table) -> None:
     table_names = get_names_from_yolo_table(table)
 
     # Check that the model and table have the same number of classes
-    assert len(model.names) == len(table_names), "The selected model was trained on a different number of classes than the table. Please select a model with the same number of classes as the table."
+    assert len(model.names) == len(table_names), (
+        "The selected model was trained on a different number of classes than the table. Please select a model with the same number of classes as the table."
+    )
 
     # Check that the model and table have the same exact classes
-    assert model.names == table_names, "The selected model was trained on different classes than the table. Please select a model with the same classes as the table."
+    assert model.names == table_names, (
+        "The selected model was trained on different classes than the table. Please select a model with the same classes as the table."
+    )
