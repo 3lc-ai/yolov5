@@ -19,7 +19,7 @@ def check_anchor_order(m):
     a = m.anchors.prod(-1).mean(-1).view(-1)  # mean anchor area per output layer
     da = a[-1] - a[0]  # delta a
     ds = m.stride[-1] - m.stride[0]  # delta s
-    if da and (da.sign() != ds.sign()):  # same order
+    if da and (da.sign() != ds.sign()):  # anchor order does not match stride order
         LOGGER.info(f"{PREFIX}Reversing anchor order")
         m.anchors[:] = m.anchors.flip(0)
 
@@ -64,10 +64,9 @@ def check_anchors(dataset, model, thr=4.0, imgsz=640):
 
 
 def kmean_anchors(dataset="./data/coco128.yaml", n=9, img_size=640, thr=4.0, gen=1000, verbose=True):
-    """
-    Creates kmeans-evolved anchors from training dataset.
+    """Creates kmeans-evolved anchors from training dataset.
 
-    Arguments:
+    Args:
         dataset: path to data.yaml, or a loaded dataset
         n: number of anchors
         img_size: image size used for training
@@ -75,10 +74,10 @@ def kmean_anchors(dataset="./data/coco128.yaml", n=9, img_size=640, thr=4.0, gen
         gen: generations to evolve anchors using genetic algorithm
         verbose: print all results
 
-    Return:
+    Returns:
         k: kmeans evolved anchors
 
-    Usage:
+    Examples:
         from utils.autoanchor import *; _ = kmean_anchors()
     """
     from scipy.cluster.vq import kmeans
@@ -90,7 +89,6 @@ def kmean_anchors(dataset="./data/coco128.yaml", n=9, img_size=640, thr=4.0, gen
         """Computes ratio metric, anchors above threshold, and best possible recall for YOLOv5 anchor evaluation."""
         r = wh[:, None] / k[None]
         x = torch.min(r, 1 / r).min(2)[0]  # ratio metric
-        # x = wh_iou(wh, torch.tensor(k))  # iou metric
         return x, x.max(1)[0]  # x, best_x
 
     def anchor_fitness(k):  # mutation fitness
@@ -158,7 +156,7 @@ def kmean_anchors(dataset="./data/coco128.yaml", n=9, img_size=640, thr=4.0, gen
     # fig.savefig('wh.png', dpi=200)
 
     # Evolve
-    f, sh, mp, s = anchor_fitness(k), k.shape, 0.9, 0.1  # fitness, generations, mutation prob, sigma
+    f, sh, mp, s = anchor_fitness(k), k.shape, 0.9, 0.1  # fitness, anchor shape, mutation prob, sigma
     pbar = tqdm(range(gen), bar_format=TQDM_BAR_FORMAT)  # progress bar
     for _ in pbar:
         v = np.ones(sh)

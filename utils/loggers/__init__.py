@@ -6,8 +6,8 @@ import os
 import warnings
 from pathlib import Path
 
-import pkg_resources as pkg
 import torch
+from packaging.version import parse
 
 from utils.general import LOGGER, colorstr, cv2
 from utils.loggers.clearml.clearml_utils import ClearmlLogger
@@ -31,7 +31,7 @@ try:
     import wandb
 
     assert hasattr(wandb, "__version__")  # verify package import not local dir
-    if pkg.parse_version(wandb.__version__) >= pkg.parse_version("0.12.2") and RANK in {0, -1}:
+    if parse(wandb.__version__) >= parse("0.12.2") and RANK in {0, -1}:
         try:
             wandb_login_success = wandb.login(timeout=30)
         except wandb.errors.UsageError:  # known non-TTY terminal issue
@@ -71,8 +71,7 @@ except (ImportError, AssertionError):
 
 
 def _json_default(value):
-    """
-    Format `value` for JSON serialization (e.g. unwrap tensors).
+    """Format `value` for JSON serialization (e.g. unwrap tensors).
 
     Fall back to strings.
     """
@@ -152,7 +151,7 @@ class Loggers:
                 prefix = colorstr("ClearML: ")
                 LOGGER.warning(
                     f"{prefix}WARNING ⚠️ ClearML is installed but not configured, skipping ClearML logging."
-                    f" See https://docs.ultralytics.com/yolov5/tutorials/clearml_logging_integration#readme"
+                    f" See https://docs.ultralytics.com/yolov5/tutorials/clearml_logging_integration"
                 )
 
         else:
@@ -212,7 +211,7 @@ class Loggers:
         """Callback that runs at the end of pre-training routine, logging label plots if enabled."""
         if self.plots:
             plot_labels(labels, names, self.save_dir)
-            paths = self.save_dir.glob("*labels*.jpg")  # training labels
+            paths = sorted(self.save_dir.glob("*labels*.jpg"))  # training labels
             if self.wandb:
                 self.wandb.log({"Labels": [wandb.Image(str(x), caption=x.name) for x in paths]})
             if self.comet_logger:
@@ -262,9 +261,7 @@ class Loggers:
             TLCLogger.get_instance().on_val_start()
 
     def on_val_image_end(self, pred, predn, path, names, im):
-        """Callback that logs a validation image and its predictions to WandB or ClearML."""
-        if self.wandb:
-            self.wandb.val_one_image(pred, predn, path, names, im)
+        """Callback that logs a validation image and its predictions to ClearML."""
         if self.clearml:
             self.clearml.log_image_with_boxes(path, pred, names, im)
 
@@ -297,9 +294,9 @@ class Loggers:
         if self.csv:
             file = self.save_dir / "results.csv"
             n = len(x) + 1  # number of cols
-            s = "" if file.exists() else (("%20s," * n % tuple(["epoch"] + self.keys)).rstrip(",") + "\n")  # add header
+            s = "" if file.exists() else (("%20s," * n % tuple(["epoch", *self.keys])).rstrip(",") + "\n")  # add header
             with open(file, "a") as f:
-                f.write(s + ("%20.5g," * n % tuple([epoch] + vals)).rstrip(",") + "\n")
+                f.write(s + ("%20.5g," * n % tuple([epoch, *vals])).rstrip(",") + "\n")
         if self.ndjson_console or self.ndjson_file:
             json_data = json.dumps(dict(epoch=epoch, **x), default=_json_default)
         if self.ndjson_console:
@@ -317,7 +314,7 @@ class Loggers:
 
         if self.wandb:
             if best_fitness == fi:
-                best_results = [epoch] + vals[3:7]
+                best_results = [epoch, *vals[3:7]]
                 for i, name in enumerate(self.best_keys):
                     self.wandb.wandb_run.summary[name] = best_results[i]  # log best results in the summary
             self.wandb.log(x)
@@ -401,14 +398,16 @@ class Loggers:
 
 
 class GenericLogger:
-    """
-    YOLOv5 General purpose logger for non-task specific logging
-    Usage: from utils.loggers import GenericLogger; logger = GenericLogger(...).
+    """General-purpose YOLOv5 logger for non-task-specific logging.
 
-    Arguments:
-        opt:             Run arguments
-        console_logger:  Console logger
-        include:         loggers to include
+    Args:
+        opt: Run arguments
+        console_logger: Console logger
+        include: loggers to include
+
+    Examples:
+        >>> from utils.loggers import GenericLogger
+        >>> logger = GenericLogger(...)
     """
 
     def __init__(self, opt, console_logger, include=("tb", "wandb", "clearml")):
@@ -451,9 +450,9 @@ class GenericLogger:
         if self.csv:
             keys, vals = list(metrics.keys()), list(metrics.values())
             n = len(metrics) + 1  # number of cols
-            s = "" if self.csv.exists() else (("%23s," * n % tuple(["epoch"] + keys)).rstrip(",") + "\n")  # header
+            s = "" if self.csv.exists() else (("%23s," * n % tuple(["epoch", *keys])).rstrip(",") + "\n")  # header
             with open(self.csv, "a") as f:
-                f.write(s + ("%23.5g," * n % tuple([epoch] + vals)).rstrip(",") + "\n")
+                f.write(s + ("%23.5g," * n % tuple([epoch, *vals])).rstrip(",") + "\n")
 
         if self.tb:
             for k, v in metrics.items():

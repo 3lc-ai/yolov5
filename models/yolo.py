@@ -98,7 +98,9 @@ class Detect(nn.Module):
         t = self.anchors[i].dtype
         shape = 1, self.na, ny, nx, 2  # grid shape
         y, x = torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t)
-        yv, xv = torch.meshgrid(y, x, indexing="ij") if torch_1_10 else torch.meshgrid(y, x)  # torch>=0.7 compatibility
+        yv, xv = (
+            torch.meshgrid(y, x, indexing="ij") if torch_1_10 else torch.meshgrid(y, x)
+        )  # torch>=1.10 compatibility
         grid = torch.stack((xv, yv), 2).expand(shape) - 0.5  # add grid offset, i.e. y = 2.0 * x - 0.5
         anchor_grid = (self.anchors[i] * self.stride[i]).view((1, self.na, 1, 1, 2)).expand(shape)
         return grid, anchor_grid
@@ -292,8 +294,7 @@ class DetectionModel(BaseModel):
         return y
 
     def _initialize_biases(self, cf=None):
-        """
-        Initializes biases for YOLOv5's Detect() module, optionally using class frequencies (cf).
+        """Initializes biases for YOLOv5's Detect() module, optionally using class frequencies (cf).
 
         For details see https://arxiv.org/abs/1708.02002 section 3.3.
         """
@@ -315,7 +316,9 @@ class SegmentationModel(DetectionModel):
     """YOLOv5 segmentation model for object detection and segmentation tasks with configurable parameters."""
 
     def __init__(self, cfg="yolov5s-seg.yaml", ch=3, nc=None, anchors=None):
-        """Initializes a YOLOv5 segmentation model with configurable params: cfg (str) for configuration, ch (int) for channels, nc (int) for num classes, anchors (list)."""
+        """Initializes a YOLOv5 segmentation model with configurable params: cfg (str) for configuration, ch (int) for
+        channels, nc (int) for num classes, anchors (list).
+        """
         super().__init__(cfg, ch, nc, anchors)
 
 
@@ -323,8 +326,8 @@ class ClassificationModel(BaseModel):
     """YOLOv5 classification model for image classification tasks, initialized with a config file or detection model."""
 
     def __init__(self, cfg=None, model=None, nc=1000, cutoff=10):
-        """Initializes YOLOv5 model with config file `cfg`, input channels `ch`, number of classes `nc`, and `cuttoff`
-        index.
+        """Initializes a YOLOv5 classification model from a YAML config (cfg) or an existing detection model (model),
+        with nc classes; when building from a detection model the backbone is sliced at the cutoff layer index.
         """
         super().__init__()
         self._from_detection_model(model, nc, cutoff) if model is not None else self._from_yaml(cfg)
@@ -347,7 +350,7 @@ class ClassificationModel(BaseModel):
         self.nc = nc
 
     def _from_yaml(self, cfg):
-        """Creates a YOLOv5 classification model from a specified *.yaml configuration file."""
+        """Placeholder; building a classification model from a *.yaml config is not implemented, sets model to None."""
         self.model = None
 
 
@@ -428,7 +431,7 @@ def parse_model(d, ch):
         t = str(m)[8:-2].replace("__main__.", "")  # module type
         np = sum(x.numel() for x in m_.parameters())  # number params
         m_.i, m_.f, m_.type, m_.np = i, f, t, np  # attach index, 'from' index, type, number params
-        LOGGER.info(f"{i:>3}{str(f):>18}{n_:>3}{np:10.0f}  {t:<40}{str(args):<30}")  # print
+        LOGGER.info(f"{i:>3}{f!s:>18}{n_:>3}{np:10.0f}  {t:<40}{args!s:<30}")  # print
         save.extend(x % i for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist
         layers.append(m_)
         if i == 0:

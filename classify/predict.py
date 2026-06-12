@@ -20,7 +20,7 @@ Usage - formats:
                                            yolov5s-cls.onnx               # ONNX Runtime or OpenCV DNN with --dnn
                                            yolov5s-cls_openvino_model     # OpenVINO
                                            yolov5s-cls.engine             # TensorRT
-                                           yolov5s-cls.mlmodel            # CoreML (macOS-only)
+                                           yolov5s-cls.mlpackage          # CoreML (macOS-only)
                                            yolov5s-cls_saved_model        # TensorFlow SavedModel
                                            yolov5s-cls.pb                 # TensorFlow GraphDef
                                            yolov5s-cls.tflite             # TensorFlow Lite
@@ -117,7 +117,7 @@ def run(
     vid_path, vid_writer = [None] * bs, [None] * bs
 
     # Run inference
-    model.warmup(imgsz=(1 if pt else bs, 3, *imgsz))  # warmup
+    model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
     seen, windows, dt = 0, [], (Profile(device=device), Profile(device=device), Profile(device=device))
     for path, im, im0s, vid_cap, s in dataset:
         with dt[0]:
@@ -196,12 +196,16 @@ def run(
 
     # Print results
     t = tuple(x.t / seen * 1e3 for x in dt)  # speeds per image
-    LOGGER.info(f"Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {(1, 3, *imgsz)}" % t)
+    LOGGER.info(
+        f"Speed: %.1fms pre-process, %.1fms inference, %.1fms post-process per image at shape {(1, 3, *imgsz)}" % t
+    )
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ""
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
     if update:
-        strip_optimizer(weights[0])  # update model (to fix SourceChangeWarning)
+        strip_optimizer(
+            weights[0] if isinstance(weights, (list, tuple)) else weights
+        )  # update model (to fix SourceChangeWarning)
 
 
 def parse_opt():

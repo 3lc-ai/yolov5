@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import tlc
 import torch
+from ultralytics.utils.patches import torch_load
 
 import val as validate
 from models.yolo import DetectionModel
@@ -254,8 +255,9 @@ class TLCLogger(BaseTLCCallback):
         """
         paths = list(last.parent.glob("*.pt"))
         for path in paths:
-            # weights_only=False: checkpoints written by this training run contain full model objects
-            ckpt = torch.load(path, map_location="cpu", weights_only=False)
+            # checkpoints written by this training run contain full model objects, so load via
+            # ultralytics' torch_load wrapper (weights_only=False) — matching how the rest of the repo loads .pt files
+            ckpt = torch_load(path, map_location="cpu")
             ckpt["model"].__class__ = DetectionModel
             ckpt["ema"].__class__ = DetectionModel
             torch.save(ckpt, path)
