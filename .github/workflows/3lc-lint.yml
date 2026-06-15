@@ -29,20 +29,16 @@ jobs:
       - name: ruff check
         run: uvx ruff check
       - name: ruff format
-        run: uvx ruff format --check utils/loggers/tlc/ tests/
+        run: uvx ruff format --check utils/loggers/tlc/ tests/tlc/
       - name: Install dependencies
         # ty resolves third-party imports (tlc, torch, ...) from the installed
         # environment, so type-checking needs the full requirements. torch is
         # installed first from the CPU index so the CUDA wheels (several GB)
         # are never pulled onto the runner; the requirements installs then see
         # torch as already satisfied.
-        #
-        # The torch<2.6 / numpy<2 pins mirror 3lc-tests.yml (upstream-YOLOv5
-        # lag; drop after the next upstream sync) and keep the type-checked
-        # environment identical to the tested one.
         run: |
           uv venv
-          uv pip install "torch<2.6" "torchvision<0.21" --index-url https://download.pytorch.org/whl/cpu
-          uv pip install -r requirements.txt -r requirements-dev.txt "numpy<2" --index-strategy unsafe-best-match
+          uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -r requirements.txt -r requirements-dev.txt --index-strategy unsafe-best-match
       - name: ty check
         run: .venv/bin/ty check

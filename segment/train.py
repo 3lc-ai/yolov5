@@ -1,6 +1,6 @@
 # Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 """
-Train a YOLOv5 segment model on a segment dataset Models and datasets download automatically from the latest YOLOv5
+Train a YOLOv5 segment model on a segment dataset. Models and datasets download automatically from the latest YOLOv5
 release.
 
 Usage - Single-GPU training:
@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -39,6 +39,8 @@ ROOT = FILE.parents[1]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+
+from ultralytics.utils.patches import torch_load
 
 import segment.val as validate  # for end-of-epoch mAP
 from models.experimental import attempt_load
@@ -96,8 +98,7 @@ GIT_INFO = check_git_info()
 
 
 def train(hyp, opt, device, callbacks):
-    """
-    Trains the YOLOv5 model on a dataset, managing hyperparameters, model optimization, logging, and validation.
+    """Trains the YOLOv5 model on a dataset, managing hyperparameters, model optimization, logging, and validation.
 
     `hyp` is path/to/hyp.yaml or hyp dictionary.
     """
@@ -174,7 +175,7 @@ def train(hyp, opt, device, callbacks):
     if pretrained:
         with torch_distributed_zero_first(LOCAL_RANK):
             weights = attempt_download(weights)  # download if not found locally
-        ckpt = torch.load(weights, map_location="cpu")  # load checkpoint to CPU to avoid CUDA memory leak
+        ckpt = torch_load(weights, map_location="cpu")  # load checkpoint to CPU to avoid CUDA memory leak
         model = SegmentationModel(cfg or ckpt["model"].yaml, ch=3, nc=nc, anchors=hyp.get("anchors")).to(device)
         exclude = ["anchor"] if (cfg or hyp.get("anchors")) and not resume else []  # exclude keys
         csd = ckpt["model"].float().state_dict()  # checkpoint state_dict as FP32
@@ -219,7 +220,7 @@ def train(hyp, opt, device, callbacks):
             """Linear learning rate scheduler decreasing from 1 to hyp['lrf'] over 'epochs'."""
             return (1 - x / epochs) * (1.0 - hyp["lrf"]) + hyp["lrf"]  # linear
 
-    scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)  # plot_lr_scheduler(optimizer, scheduler, epochs)
+    scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
 
     # EMA
     ema = ModelEMA(model) if RANK in {-1, 0} else None
@@ -541,8 +542,7 @@ def train(hyp, opt, device, callbacks):
 
 
 def parse_opt(known=False):
-    """
-    Parses command line arguments for training configurations, returning parsed arguments.
+    """Parses command line arguments for training configurations, returning parsed arguments.
 
     Supports both known and unknown args.
     """
@@ -583,7 +583,7 @@ def parse_opt(known=False):
     parser.add_argument("--local_rank", type=int, default=-1, help="Automatic DDP Multi-GPU argument, do not modify")
 
     # Instance Segmentation Args
-    parser.add_argument("--mask-ratio", type=int, default=4, help="Downsample the truth masks to saving memory")
+    parser.add_argument("--mask-ratio", type=int, default=4, help="Downsample the truth masks to save memory")
     parser.add_argument("--no-overlap", action="store_true", help="Overlap masks train faster at slightly less mAP")
 
     return parser.parse_known_args()[0] if known else parser.parse_args()
@@ -605,7 +605,7 @@ def main(opt, callbacks=Callbacks()):
             with open(opt_yaml, errors="ignore") as f:
                 d = yaml.safe_load(f)
         else:
-            d = torch.load(last, map_location="cpu")["opt"]
+            d = torch_load(last, map_location="cpu")["opt"]
         opt = argparse.Namespace(**d)  # replace
         opt.cfg, opt.weights, opt.resume = "", str(last), True  # reinstate
         if is_url(opt_data):
@@ -638,7 +638,9 @@ def main(opt, callbacks=Callbacks()):
         assert torch.cuda.device_count() > LOCAL_RANK, "insufficient CUDA devices for DDP command"
         torch.cuda.set_device(LOCAL_RANK)
         device = torch.device("cuda", LOCAL_RANK)
-        dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "gloo")
+        dist.init_process_group(
+            backend="nccl" if dist.is_nccl_available() else "gloo", timeout=timedelta(seconds=10800)
+        )
 
     # Train
     if not opt.evolve:
@@ -742,13 +744,12 @@ def main(opt, callbacks=Callbacks()):
         LOGGER.info(
             f"Hyperparameter evolution finished {opt.evolve} generations\n"
             f"Results saved to {colorstr('bold', save_dir)}\n"
-            f"Usage example: $ python train.py --hyp {evolve_yaml}"
+            f"Usage example: $ python segment/train.py --hyp {evolve_yaml}"
         )
 
 
 def run(**kwargs):
-    """
-    Executes YOLOv5 training with given parameters, altering options programmatically; returns updated options.
+    """Executes YOLOv5 training with given parameters, altering options programmatically; returns updated options.
 
     Example: import train; train.run(data='coco128.yaml', imgsz=320, weights='yolov5m.pt')
     """

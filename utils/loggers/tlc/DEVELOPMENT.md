@@ -37,12 +37,16 @@ Lint, format, type-check and test (scope is defined in `ruff.toml` / `ty.toml`):
 
 ```bash
 ruff check
-ruff format --check utils/loggers/tlc/ tests/
+ruff format --check utils/loggers/tlc/ tests/tlc/
 ty check
-pytest -o "addopts=" tests/  # -o sidesteps upstream's broken [tool.pytest] block in pyproject.toml
+pytest -o "addopts=" tests/tlc/  # -o sidesteps upstream's broken [tool.pytest] block in pyproject.toml
 ```
 
-The end-to-end tests in `tests/` require a valid 3LC API key — locally the
+The fork's tests live in `tests/tlc/` (not `tests/` directly): upstream ships
+its own `tests/*.py` security/invariant suite, so the fork's tests are kept in a
+subdirectory to stay out of the fork tooling's scope and avoid merge friction.
+
+The end-to-end tests in `tests/tlc/` require a valid 3LC API key — locally the
 one from your 3LC configuration is used; in CI the `TLC_API_KEY` repository
 secret provides it. They fail (not skip) without one.
 
@@ -71,12 +75,20 @@ git merge ultralytics/master
 
 Notes:
 
-- Fork-owned files (`utils/loggers/tlc/**`, `tests/**`, `ruff.toml`,
-  `ty.toml`, `requirements-dev.txt`, `.github/workflows/3lc-ci.yml`) are never
+- Fork-owned files (`utils/loggers/tlc/**`, `tests/tlc/**`, `ruff.toml`,
+  `ty.toml`, `requirements-dev.txt`, the `3lc-*.yml` workflows) are never
   touched by upstream, so conflicts are confined to the few upstream files the
   integration hooks into: `train.py`, `val.py`, `utils/loggers/__init__.py`,
   `models/yolo.py`, `utils/general.py` and `README.md`.
 - On conflicts, take upstream's version and re-apply the integration hook
   points.
+- Upstream owns `tests/*.py` directly (it ships a `test_invariant_*.py` /
+  `test_flask_rest_api.py` security suite); the fork's tests live in
+  `tests/tlc/`. New upstream `tests/` files are not fork-owned — leave them
+  untouched and keep the fork's ruff/pytest scope on `tests/tlc/`.
+- Watch for upstream's growing dependence on the `ultralytics` package
+  (`requirements.txt` pins `ultralytics>=…`; functions like `colorstr` and
+  `torch_load` are re-exported from it). The integration uses
+  `ultralytics.utils.patches.torch_load`, matching upstream.
 - PR the sync branch into `develop` so CI validates the merge, then
   fast-forward the `master` mirror to `ultralytics/master`.

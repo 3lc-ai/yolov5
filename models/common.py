@@ -3,15 +3,17 @@
 
 import ast
 import contextlib
+import ipaddress
 import json
 import math
 import platform
+import socket
 import warnings
 import zipfile
 from collections import OrderedDict, namedtuple
 from copy import copy
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import cv2
 import numpy as np
@@ -58,8 +60,7 @@ from utils.torch_utils import copy_attr, smart_inference_mode
 
 
 def autopad(k, p=None, d=1):
-    """
-    Pads kernel to 'same' output shape, adjusting for optional dilation; returns padding size.
+    """Pads kernel to 'same' output shape, adjusting for optional dilation; returns padding size.
 
     `k`: kernel, `p`: padding, `d`: dilation.
     """
@@ -115,10 +116,9 @@ class TransformerLayer(nn.Module):
     """Transformer layer with multihead attention and linear layers, optimized by removing LayerNorm."""
 
     def __init__(self, c, num_heads):
-        """
-        Initializes a transformer layer, sans LayerNorm for performance, with multihead attention and linear layers.
+        """Initializes a transformer layer, sans LayerNorm for performance, with multihead attention and linear layers.
 
-        See  as described in https://arxiv.org/abs/2010.11929.
+        As described in https://arxiv.org/abs/2010.11929 (ViT).
         """
         super().__init__()
         self.q = nn.Linear(c, c, bias=False)
@@ -211,8 +211,7 @@ class CrossConv(nn.Module):
     """Implements a cross convolution layer with downsampling, expansion, and optional shortcut."""
 
     def __init__(self, c1, c2, k=3, s=1, g=1, e=1.0, shortcut=False):
-        """
-        Initializes CrossConv with downsampling, expanding, and optionally shortcutting; `c1` input, `c2` output
+        """Initializes CrossConv with downsampling, expanding, and optionally shortcutting; `c1` input, `c2` output
         channels.
 
         Inputs are ch_in, ch_out, kernel, stride, groups, expansion, shortcut.
@@ -297,7 +296,9 @@ class SPP(nn.Module):
     """Implements Spatial Pyramid Pooling (SPP) for feature extraction, ref: https://arxiv.org/abs/1406.4729."""
 
     def __init__(self, c1, c2, k=(5, 9, 13)):
-        """Initializes SPP layer with Spatial Pyramid Pooling, ref: https://arxiv.org/abs/1406.4729, args: c1 (input channels), c2 (output channels), k (kernel sizes)."""
+        """Initializes SPP layer with Spatial Pyramid Pooling, ref: https://arxiv.org/abs/1406.4729, args: c1 (input
+        channels), c2 (output channels), k (kernel sizes).
+        """
         super().__init__()
         c_ = c1 // 2  # hidden channels
         self.cv1 = Conv(c1, c_, 1, 1)
@@ -318,8 +319,7 @@ class SPPF(nn.Module):
     """Implements a fast Spatial Pyramid Pooling (SPPF) layer for efficient feature extraction in YOLOv5 models."""
 
     def __init__(self, c1, c2, k=5):
-        """
-        Initializes YOLOv5 SPPF layer with given channels and kernel size for YOLOv5 model, combining convolution and
+        """Initializes YOLOv5 SPPF layer with given channels and kernel size for YOLOv5 model, combining convolution and
         max pooling.
 
         Equivalent to SPP(k=(5, 9, 13)).
@@ -379,7 +379,9 @@ class GhostBottleneck(nn.Module):
     """Efficient bottleneck layer using Ghost Convolutions, see https://github.com/huawei-noah/ghostnet."""
 
     def __init__(self, c1, c2, k=3, s=1):
-        """Initializes GhostBottleneck with ch_in `c1`, ch_out `c2`, kernel size `k`, stride `s`; see https://github.com/huawei-noah/ghostnet."""
+        """Initializes GhostBottleneck with ch_in `c1`, ch_out `c2`, kernel size `k`, stride `s`; see
+        https://github.com/huawei-noah/ghostnet.
+        """
         super().__init__()
         c_ = c2 // 2
         self.conv = nn.Sequential(
@@ -421,9 +423,8 @@ class Expand(nn.Module):
     """Expands spatial dimensions by redistributing channels, e.g., from (1,64,80,80) to (1,16,160,160)."""
 
     def __init__(self, gain=2):
-        """
-        Initializes the Expand module to increase spatial dimensions by redistributing channels, with an optional gain
-        factor.
+        """Initializes the Expand module to increase spatial dimensions by redistributing channels, with an optional
+        gain factor.
 
         Example: x(1,64,80,80) to x(1,16,160,160).
         """
@@ -431,9 +432,7 @@ class Expand(nn.Module):
         self.gain = gain
 
     def forward(self, x):
-        """Processes input tensor x to expand spatial dimensions by redistributing channels, requiring C / gain^2 ==
-        0.
-        """
+        """Processes input tensor x to expand spatial dims by redistributing channels, requiring C / gain^2 == 0."""
         b, c, h, w = x.size()  # assert C / s ** 2 == 0, 'Indivisible gain'
         s = self.gain
         x = x.view(b, s, s, c // s**2, h, w)  # x(1,2,2,16,80,80)
@@ -450,9 +449,7 @@ class Concat(nn.Module):
         self.d = dimension
 
     def forward(self, x):
-        """Concatenates a list of tensors along a specified dimension; `x` is a list of tensors, `dimension` is an
-        int.
-        """
+        """Concatenates a list of tensors along a specified dims; `x` is a list of tensors, `dimension` is an int."""
         return torch.cat(x, self.d)
 
 
@@ -516,11 +513,11 @@ class DetectMultiBackend(nn.Module):
             output_names = [x.name for x in session.get_outputs()]
             meta = session.get_modelmeta().custom_metadata_map  # metadata
             if "stride" in meta:
-                stride, names = int(meta["stride"]), eval(meta["names"])
+                stride, names = int(meta["stride"]), ast.literal_eval(meta["names"])
         elif xml:  # OpenVINO
             LOGGER.info(f"Loading {w} for OpenVINO inference...")
-            check_requirements("openvino>=2023.0")  # requires openvino-dev: https://pypi.org/project/openvino-dev/
-            from openvino.runtime import Core, Layout, get_batch
+            check_requirements("openvino>=2024.0.0")
+            from openvino import Core, Layout, get_batch
 
             core = Core()
             if not Path(w).is_file():  # if not *.xml
@@ -590,8 +587,7 @@ class DetectMultiBackend(nn.Module):
             LOGGER.info(f"Loading {w} for TensorFlow SavedModel inference...")
             import tensorflow as tf
 
-            keras = False  # assume TF1 saved_model
-            model = tf.keras.models.load_model(w) if keras else tf.saved_model.load(w)
+            model = tf.saved_model.load(w)
         elif pb:  # GraphDef https://www.tensorflow.org/guide/migrate#a_graphpb_or_graphpbtxt
             LOGGER.info(f"Loading {w} for TensorFlow GraphDef inference...")
             import tensorflow as tf
@@ -644,20 +640,33 @@ class DetectMultiBackend(nn.Module):
                     stride, names = int(meta["stride"]), meta["names"]
         elif tfjs:  # TF.js
             raise NotImplementedError("ERROR: YOLOv5 TF.js inference is not supported")
-        elif paddle:  # PaddlePaddle
+        # PaddlePaddle
+        elif paddle:
             LOGGER.info(f"Loading {w} for PaddlePaddle inference...")
-            check_requirements("paddlepaddle-gpu" if cuda else "paddlepaddle")
+            check_requirements("paddlepaddle-gpu" if cuda else "paddlepaddle>=3.0.0")
             import paddle.inference as pdi
 
-            if not Path(w).is_file():  # if not *.pdmodel
-                w = next(Path(w).rglob("*.pdmodel"))  # get *.pdmodel file from *_paddle_model dir
-            weights = Path(w).with_suffix(".pdiparams")
-            config = pdi.Config(str(w), str(weights))
+            w = Path(w)
+            if w.is_dir():
+                model_file = next(w.rglob("*.json"), None)
+                params_file = next(w.rglob("*.pdiparams"), None)
+            elif w.suffix == ".pdiparams":
+                model_file = w.with_name("model.json")
+                params_file = w
+            else:
+                raise ValueError(f"Invalid model path {w}. Provide model directory or a .pdiparams file.")
+
+            if not (model_file and params_file and model_file.is_file() and params_file.is_file()):
+                raise FileNotFoundError(f"Model files not found in {w}. Both .json and .pdiparams files are required.")
+
+            config = pdi.Config(str(model_file), str(params_file))
             if cuda:
                 config.enable_use_gpu(memory_pool_init_size_mb=2048, device_id=0)
+            config.disable_mkldnn()  # disable MKL-DNN for PIR compatibility
             predictor = pdi.create_predictor(config)
             input_handle = predictor.get_input_handle(predictor.get_input_names()[0])
             output_names = predictor.get_output_names()
+
         elif triton:  # NVIDIA Triton Inference Server
             LOGGER.info(f"Using {w} as Triton Inference Server...")
             check_requirements("tritonclient[all]")
@@ -678,7 +687,7 @@ class DetectMultiBackend(nn.Module):
 
     def forward(self, im, augment=False, visualize=False):
         """Performs YOLOv5 inference on input images with options for augmentation and visualization."""
-        b, ch, h, w = im.shape  # batch, channel, height, width
+        _b, _ch, h, w = im.shape  # batch, channel, height, width
         if self.fp16 and im.dtype != torch.float16:
             im = im.half()  # to FP16
         if self.nhwc:
@@ -700,12 +709,20 @@ class DetectMultiBackend(nn.Module):
             y = list(self.ov_compiled_model(im).values())
         elif self.engine:  # TensorRT
             if self.dynamic and im.shape != self.bindings["images"].shape:
-                i = self.model.get_binding_index("images")
-                self.context.set_binding_shape(i, im.shape)  # reshape if dynamic
-                self.bindings["images"] = self.bindings["images"]._replace(shape=im.shape)
-                for name in self.output_names:
-                    i = self.model.get_binding_index(name)
-                    self.bindings[name].data.resize_(tuple(self.context.get_binding_shape(i)))
+                if self.is_trt10:  # TensorRT>=10 tensor API
+                    self.context.set_input_shape("images", im.shape)  # reshape if dynamic
+                    self.bindings["images"] = self.bindings["images"]._replace(shape=im.shape)
+                    for name in self.output_names:
+                        self.bindings[name].data.resize_(tuple(self.context.get_tensor_shape(name)))
+                        self.binding_addrs[name] = int(self.bindings[name].data.data_ptr())  # refresh after resize_
+                else:  # TensorRT<10 binding API
+                    i = self.model.get_binding_index("images")
+                    self.context.set_binding_shape(i, im.shape)  # reshape if dynamic
+                    self.bindings["images"] = self.bindings["images"]._replace(shape=im.shape)
+                    for name in self.output_names:
+                        i = self.model.get_binding_index(name)
+                        self.bindings[name].data.resize_(tuple(self.context.get_binding_shape(i)))
+                        self.binding_addrs[name] = int(self.bindings[name].data.data_ptr())  # refresh after resize_
             s = self.bindings["images"].shape
             assert im.shape == s, f"input size {im.shape} {'>' if self.dynamic else 'not equal to'} max model size {s}"
             self.binding_addrs["images"] = int(im.data_ptr())
@@ -718,7 +735,7 @@ class DetectMultiBackend(nn.Module):
             y = self.model.predict({"image": im})  # coordinates are xywh normalized
             if "confidence" in y:
                 box = xywh2xyxy(y["coordinates"] * [[w, h, w, h]])  # xyxy pixels
-                conf, cls = y["confidence"].max(1), y["confidence"].argmax(1).astype(np.float)
+                conf, cls = y["confidence"].max(1), y["confidence"].argmax(1).astype(float)
                 y = np.concatenate((box, conf.reshape(-1, 1), cls.reshape(-1, 1)), 1)
             else:
                 y = list(reversed(y.values()))  # reversed for segmentation models (pred, proto)
@@ -732,7 +749,7 @@ class DetectMultiBackend(nn.Module):
         else:  # TensorFlow (SavedModel, GraphDef, Lite, Edge TPU)
             im = im.cpu().numpy()
             if self.saved_model:  # SavedModel
-                y = self.model(im, training=False) if self.keras else self.model(im)
+                y = self.model(im)
             elif self.pb:  # GraphDef
                 y = self.frozen_func(x=self.tf.constant(im))
             else:  # Lite or Edge TPU
@@ -774,8 +791,7 @@ class DetectMultiBackend(nn.Module):
 
     @staticmethod
     def _model_type(p="path/to/model.pt"):
-        """
-        Determines model type from file path or URL, supporting various export formats.
+        """Determines model type from file path or URL, supporting various export formats.
 
         Example: path='path/to/model.onnx' -> type=onnx
         """
@@ -790,7 +806,7 @@ class DetectMultiBackend(nn.Module):
         types = [s in Path(p).name for s in sf]
         types[8] &= not types[9]  # tflite &= not edgetpu
         triton = not any(types) and all([any(s in url.scheme for s in ["http", "grpc"]), url.netloc])
-        return types + [triton]
+        return [*types, triton]
 
     @staticmethod
     def _load_metadata(f=Path("path/to/meta.yaml")):
@@ -799,6 +815,32 @@ class DetectMultiBackend(nn.Module):
             d = yaml_load(f)
             return d["stride"], d["names"]  # assign stride, names
         return None, None
+
+
+def _validate_ssrf_url(url: str) -> None:
+    """Raise ValueError if url resolves to any private/internal address."""
+    hostname = urlparse(url).hostname or ""
+    try:
+        results = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as e:
+        raise ValueError(f"Could not resolve hostname '{hostname}': {e}") from e
+    for _family, _type, _proto, _canonname, sockaddr in results:
+        addr = ipaddress.ip_address(sockaddr[0])
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved or addr.is_multicast:
+            raise ValueError(f"Blocked request to internal address: {addr}")
+
+
+def _request_ssrf_url(url: str, max_redirects: int = 5):
+    """Fetch a URL after validating each resolved redirect target."""
+    session = requests.Session()
+    for _ in range(max_redirects + 1):
+        _validate_ssrf_url(url)
+        response = session.get(url, stream=True, allow_redirects=False)
+        if not response.is_redirect:
+            return response
+        url = urljoin(response.url, response.headers["location"])
+        response.close()
+    raise ValueError(f"Too many redirects while fetching {url}")
 
 
 class AutoShape(nn.Module):
@@ -827,11 +869,7 @@ class AutoShape(nn.Module):
             m.export = True  # do not output loss values
 
     def _apply(self, fn):
-        """
-        Applies to(), cpu(), cuda(), half() etc.
-
-        to model tensors excluding parameters or registered buffers.
-        """
+        """Applies to(), cpu(), cuda(), half() etc. to model tensors, excluding parameters or registered buffers."""
         self = super()._apply(fn)
         if self.pt:
             m = self.model.model.model[-1] if self.dmb else self.model.model[-1]  # Detect()
@@ -843,8 +881,7 @@ class AutoShape(nn.Module):
 
     @smart_inference_mode()
     def forward(self, ims, size=640, augment=False, profile=False):
-        """
-        Performs inference on inputs with optional augment & profiling.
+        """Performs inference on inputs with optional augment & profiling.
 
         Supports various formats including file, URI, OpenCV, PIL, numpy, torch.
         """
@@ -873,7 +910,7 @@ class AutoShape(nn.Module):
             for i, im in enumerate(ims):
                 f = f"image{i}"  # filename
                 if isinstance(im, (str, Path)):  # filename or uri
-                    im, f = Image.open(requests.get(im, stream=True).raw if str(im).startswith("http") else im), im
+                    im, f = Image.open(_request_ssrf_url(str(im)).raw if str(im).startswith("http") else im), im
                     im = np.asarray(exif_transpose(im))
                 elif isinstance(im, Image.Image):  # PIL Image
                     im, f = np.asarray(exif_transpose(im)), getattr(im, "filename", f) or f
@@ -916,7 +953,7 @@ class AutoShape(nn.Module):
 class Detections:
     """Manages YOLOv5 detection results with methods for visualization, saving, cropping, and exporting detections."""
 
-    def __init__(self, ims, pred, files, times=(0, 0, 0), names=None, shape=None):
+    def __init__(self, ims, pred, files, times, names=None, shape=None):
         """Initializes the YOLOv5 Detections class with image info, predictions, filenames, timing and normalization."""
         super().__init__()
         d = pred[0].device  # device
@@ -990,16 +1027,14 @@ class Detections:
 
     @TryExcept("Showing images is not supported in this environment")
     def show(self, labels=True):
-        """
-        Displays detection results with optional labels.
+        """Displays detection results with optional labels.
 
         Usage: show(labels=True)
         """
         self._run(show=True, labels=labels)  # show results
 
     def save(self, labels=True, save_dir="runs/detect/exp", exist_ok=False):
-        """
-        Saves detection results with optional labels to a specified directory.
+        """Saves detection results with optional labels to a specified directory.
 
         Usage: save(labels=True, save_dir='runs/detect/exp', exist_ok=False)
         """
@@ -1007,8 +1042,7 @@ class Detections:
         self._run(save=True, labels=labels, save_dir=save_dir)  # save results
 
     def crop(self, save=True, save_dir="runs/detect/exp", exist_ok=False):
-        """
-        Crops detection results, optionally saves them to a directory.
+        """Crops detection results, optionally saves them to a directory.
 
         Args: save (bool), save_dir (str), exist_ok (bool).
         """
@@ -1021,8 +1055,7 @@ class Detections:
         return self.ims
 
     def pandas(self):
-        """
-        Returns detections as pandas DataFrames for various box formats (xyxy, xyxyn, xywh, xywhn).
+        """Returns detections as pandas DataFrames for various box formats (xyxy, xyxyn, xywh, xywhn).
 
         Example: print(results.pandas().xyxy[0]).
         """
@@ -1030,13 +1063,12 @@ class Detections:
         ca = "xmin", "ymin", "xmax", "ymax", "confidence", "class", "name"  # xyxy columns
         cb = "xcenter", "ycenter", "width", "height", "confidence", "class", "name"  # xywh columns
         for k, c in zip(["xyxy", "xyxyn", "xywh", "xywhn"], [ca, ca, cb, cb]):
-            a = [[x[:5] + [int(x[5]), self.names[int(x[5])]] for x in x.tolist()] for x in getattr(self, k)]  # update
+            a = [[[*x[:5], int(x[5]), self.names[int(x[5])]] for x in x.tolist()] for x in getattr(self, k)]  # update
             setattr(new, k, [pd.DataFrame(x, columns=c) for x in a])
         return new
 
     def tolist(self):
-        """
-        Converts a Detections object into a list of individual detection results for iteration.
+        """Converts a Detections object into a list of individual detection results for iteration.
 
         Example: for result in results.tolist():
         """

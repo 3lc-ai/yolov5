@@ -1,6 +1,8 @@
 # Ruff config for the 3LC integration in this fork.
 #
-# Scoped to utils/loggers/tlc/ and tests/ so upstream YOLOv5 code is not touched.
+# Scoped to utils/loggers/tlc/ and tests/tlc/ so upstream YOLOv5 code is not
+# touched. Upstream ships its own tests/*.py (e.g. test_invariant_*.py), so the
+# fork's tests live under tests/tlc/ to keep them out of fork tooling's scope.
 # This file takes precedence over the [tool.ruff] block in pyproject.toml.
 #
 # The rule set starts narrow on purpose: it just enforces the basics
@@ -13,7 +15,7 @@ target-version = "py310"
 
 include = [
     "utils/loggers/tlc/**/*.py",
-    "tests/**/*.py",
+    "tests/tlc/**/*.py",
 ]
 
 [lint]
